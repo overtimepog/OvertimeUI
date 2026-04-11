@@ -1394,19 +1394,18 @@ function OvertimeUI:Notify(cfg)
     })
     corner(stripe, 2)
 
-    Create("UIPadding", {
-        PaddingTop    = UDim.new(0, 10),
-        PaddingBottom = UDim.new(0, 10),
-        PaddingLeft   = UDim.new(0, 20),
-        PaddingRight  = UDim.new(0, 12),
-        Parent = toast,
-    })
-
     local contentBox = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1,
         Parent = toast,
+    })
+    Create("UIPadding", {
+        PaddingTop    = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft   = UDim.new(0, 20),
+        PaddingRight  = UDim.new(0, 12),
+        Parent = contentBox,
     })
     Create("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
