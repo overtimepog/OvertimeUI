@@ -2,7 +2,7 @@
 
 A single-file Roblox UI library for scripts loaded through the Overtime Executor (and any other executor with `loadstring` + `game:HttpGet` support).
 
-Tabs, toggles, sliders, dropdowns, buttons, keybinds, labels, paragraphs, and toast notifications — everything you need to build a clean cheat-menu-style interface in ~20 lines of config.
+Tabs, toggles, sliders, dropdowns, buttons, keybinds, color pickers, labels, paragraphs, and toast notifications — everything you need to build a clean cheat-menu-style interface in ~20 lines of config.
 
 > **Scope:** this repository is the UI library only, and is MIT licensed. The Overtime Executor itself is closed source and is not distributed here.
 
@@ -58,11 +58,12 @@ Loading from `main` always gives you the latest; loading from a tag like `v0.1.0
 - **Buttons** with optional two-stage "click to confirm" pattern
 - **Keybinds** supporting keyboard, mouse 1/2/3, **and mouse 4/5** (most Roblox UI libraries cap out at LMB/RMB/MMB — see the note below)
 - **Inline attached keybinds** Linoria-style: `:AddKeybind{...}` on a toggle puts the rebind button on the same row
+- **Color pickers** with an HSV popup (saturation/value box + hue bar + hex readout)
 - **Labels** and **Paragraphs** for inline text / doc blocks
 - **Toast notifications** with a shared stack, TweenService slide-in/out, and auto-dismiss
 - **Self-contained lifecycle** — the library owns the ScreenGui and a `BoolValue` marker; re-running the script toggles the window off automatically
 - **Per-window accent color override** (defaults to sky blue)
-- **~1460 lines, single file, no external dependencies**
+- **~1780 lines, single file, no external dependencies**
 
 ## API reference
 
@@ -170,6 +171,21 @@ Handle methods:
 - `:Get()` / `:Set(option)` / `:SetSilent(option)`
 - `:Refresh(newOptions, newCurrent)` — replace the option list (e.g. for a dynamic dropdown of live player names)
 
+### `Section:CreateColorPicker(config)` → `ColorPicker` handle
+
+| field | type | default |
+|---|---|---|
+| `Name` | string | `"Color"` |
+| `CurrentColor` | `Color3` | white |
+| `Callback` | `function(Color3)` | — |
+
+Clicking the row's color swatch opens a popup with a saturation/value box, a vertical hue bar, and a hex readout. The callback fires on every drag step (same cadence as the slider — wrap your own debounce if the downstream work is heavy).
+
+Handle methods:
+- `:Get()` — current `Color3`
+- `:Set(color)` — set and fire callback
+- `:SetSilent(color)` — set without firing callback
+
 ### `Section:CreateButton(config)` → `Button` handle
 
 | field | type | default |
@@ -242,7 +258,7 @@ Net result: running the script once creates the window, running it again destroy
 
 ## Example
 
-See [`examples/UI_Test.lua`](examples/UI_Test.lua) for a full smoke test that exercises every control.
+See [`examples/UI.lua`](examples/UI.lua) for a full smoke test that exercises every control.
 
 ## License
 

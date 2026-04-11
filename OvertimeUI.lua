@@ -752,6 +752,331 @@ function Section:CreateDropdown(cfg)
 end
 
 -- =========================================================================
+-- Color Picker
+-- =========================================================================
+-- HSV color picker in a popup. Config:
+--   Name         = "Chams Color"
+--   CurrentColor = Color3 (defaults to white)
+--   Callback     = function(color) ... end
+-- The popup has a saturation/value box and a vertical hue bar, parented
+-- to the window's ScreenGui so it can extend outside the panel bounds
+-- (same pattern as CreateDropdown). A full-screen transparent backdrop
+-- captures click-outside-to-close. Returns a handle with :Get(), :Set(c),
+-- :SetSilent(c), where `c` is a Color3.
+function Section:CreateColorPicker(cfg)
+    cfg = cfg or {}
+    local window = self.tab.window
+    local theme  = window.theme
+    local gui    = window.gui
+
+    local currentColor = cfg.CurrentColor or Color3.fromRGB(255, 255, 255)
+    local h, s, v = currentColor:ToHSV()
+
+    local handle = { Type = "ColorPicker", Name = cfg.Name or "Color" }
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    Create("TextLabel", {
+        Size = UDim2.new(1, -64, 1, 0),
+        Position = UDim2.new(0, 2, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Name or "Color",
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local swatch = Create("TextButton", {
+        Size = UDim2.fromOffset(56, 18),
+        Position = UDim2.new(1, -60, 0.5, -9),
+        BackgroundColor3 = currentColor,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        Parent = row,
+    })
+    corner(swatch, 3)
+    stroke(swatch, theme.border, 1)
+
+    -- Popup widgets are allocated on open. Kept as upvalues so :Set can
+    -- update them live when the popup happens to be open, and so
+    -- closePopup can nil them out for re-open.
+    local popupOpen = false
+    local popupBackdrop, svBox, hueBar, svCursor, hueCursor, hexLabel
+    local draggingSV, draggingHue = false, false
+    local svMoveConn, hueMoveConn, releaseConn
+
+    local function formatHex(c)
+        return string.format("#%02X%02X%02X",
+            math.floor(c.R * 255 + 0.5),
+            math.floor(c.G * 255 + 0.5),
+            math.floor(c.B * 255 + 0.5))
+    end
+
+    -- Rebuilds the Color3 from the current h/s/v, updates the swatch,
+    -- and — if the popup is open — refreshes the SV box hue background,
+    -- the cursor positions, and the hex readout. Fires the user callback
+    -- only when fireCallback is true.
+    local function applyHSV(fireCallback)
+        local c = Color3.fromHSV(h, s, v)
+        currentColor = c
+        swatch.BackgroundColor3 = c
+        if svBox then
+            svBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+        end
+        if svCursor then
+            svCursor.Position = UDim2.new(s, -4, 1 - v, -4)
+        end
+        if hueCursor then
+            hueCursor.Position = UDim2.new(0, -2, h, -1)
+        end
+        if hexLabel then
+            hexLabel.Text = formatHex(c)
+        end
+        if fireCallback and cfg.Callback then
+            task.spawn(cfg.Callback, c)
+        end
+    end
+
+    local function setColor(c, fireCallback)
+        if typeof(c) ~= "Color3" then return end
+        h, s, v = c:ToHSV()
+        applyHSV(fireCallback)
+    end
+
+    local function closePopup()
+        popupOpen = false
+        draggingSV = false
+        draggingHue = false
+        if svMoveConn  then svMoveConn:Disconnect()  svMoveConn  = nil end
+        if hueMoveConn then hueMoveConn:Disconnect() hueMoveConn = nil end
+        if releaseConn then releaseConn:Disconnect() releaseConn = nil end
+        if popupBackdrop then
+            popupBackdrop:Destroy()
+            popupBackdrop = nil
+            svBox, hueBar = nil, nil
+            svCursor, hueCursor = nil, nil
+            hexLabel = nil
+        end
+    end
+
+    local function openPopup()
+        if popupOpen then return end
+        popupOpen = true
+
+        -- Full-screen backdrop catches clicks outside the popup.
+        popupBackdrop = Create("TextButton", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 50,
+            Parent = gui,
+        })
+        popupBackdrop.MouseButton1Click:Connect(closePopup)
+
+        -- Right-align the popup under the swatch so its body doesn't
+        -- run off the right edge of the screen.
+        local popupW, popupH = 192, 160
+        local popupX = swatch.AbsolutePosition.X + swatch.AbsoluteSize.X - popupW
+        local popupY = swatch.AbsolutePosition.Y + swatch.AbsoluteSize.Y + 4
+
+        local popupFrame = Create("Frame", {
+            Size = UDim2.fromOffset(popupW, popupH),
+            Position = UDim2.fromOffset(popupX, popupY),
+            BackgroundColor3 = theme.bgAlt,
+            BorderSizePixel = 0,
+            ZIndex = 51,
+            Parent = popupBackdrop,
+        })
+        corner(popupFrame, 4)
+        stroke(popupFrame, theme.border, 1)
+
+        -- Saturation/Value box. The base frame is the pure hue; a
+        -- horizontal white→transparent gradient gives the saturation
+        -- axis, and a vertical transparent→black gradient gives the
+        -- value axis. Active = true so the Frame receives InputBegan
+        -- directly; the overlay children aren't Active, so clicks pass
+        -- through to the SV box underneath.
+        svBox = Create("Frame", {
+            Size = UDim2.fromOffset(150, 120),
+            Position = UDim2.fromOffset(8, 8),
+            BackgroundColor3 = Color3.fromHSV(h, 1, 1),
+            BorderSizePixel = 0,
+            Active = true,
+            ZIndex = 52,
+            Parent = popupFrame,
+        })
+        corner(svBox, 3)
+
+        local whiteOverlay = Create("Frame", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 53,
+            Parent = svBox,
+        })
+        corner(whiteOverlay, 3)
+        Create("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0),
+                NumberSequenceKeypoint.new(1, 1),
+            }),
+            Rotation = 0,
+            Parent = whiteOverlay,
+        })
+
+        local blackOverlay = Create("Frame", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BorderSizePixel = 0,
+            ZIndex = 54,
+            Parent = svBox,
+        })
+        corner(blackOverlay, 3)
+        Create("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(1, 0),
+            }),
+            Rotation = 90,
+            Parent = blackOverlay,
+        })
+
+        svCursor = Create("Frame", {
+            Size = UDim2.fromOffset(8, 8),
+            Position = UDim2.new(s, -4, 1 - v, -4),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 55,
+            Parent = svBox,
+        })
+        corner(svCursor, 4)
+        stroke(svCursor, Color3.new(0, 0, 0), 1)
+
+        -- Vertical hue bar. Gradient walks the full hue wheel top to
+        -- bottom; wraps back to red at both ends so 0 and 1 match.
+        hueBar = Create("Frame", {
+            Size = UDim2.fromOffset(18, 120),
+            Position = UDim2.fromOffset(166, 8),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            Active = true,
+            ZIndex = 52,
+            Parent = popupFrame,
+        })
+        corner(hueBar, 3)
+        Create("UIGradient", {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0.000, Color3.fromRGB(255, 0,   0  )),
+                ColorSequenceKeypoint.new(0.166, Color3.fromRGB(255, 255, 0  )),
+                ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0,   255, 0  )),
+                ColorSequenceKeypoint.new(0.500, Color3.fromRGB(0,   255, 255)),
+                ColorSequenceKeypoint.new(0.666, Color3.fromRGB(0,   0,   255)),
+                ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0,   255)),
+                ColorSequenceKeypoint.new(1.000, Color3.fromRGB(255, 0,   0  )),
+            }),
+            Rotation = 90,
+            Parent = hueBar,
+        })
+
+        hueCursor = Create("Frame", {
+            Size = UDim2.new(1, 4, 0, 2),
+            Position = UDim2.new(0, -2, h, -1),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 53,
+            Parent = hueBar,
+        })
+        stroke(hueCursor, Color3.new(0, 0, 0), 1)
+
+        hexLabel = Create("TextLabel", {
+            Size = UDim2.new(1, -16, 0, 16),
+            Position = UDim2.fromOffset(8, 136),
+            BackgroundTransparency = 1,
+            Text = formatHex(currentColor),
+            TextColor3 = theme.textDim,
+            Font = FONT_SEMI,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 52,
+            Parent = popupFrame,
+        })
+
+        -- Drag handlers. SV box updates saturation+value from the click
+        -- position; hue bar updates hue. Both call applyHSV(true) to
+        -- refresh the swatch/cursors/hex and fire the user callback.
+        local function updateSV(input)
+            local rx = input.Position.X - svBox.AbsolutePosition.X
+            local ry = input.Position.Y - svBox.AbsolutePosition.Y
+            s = math.clamp(rx / math.max(svBox.AbsoluteSize.X, 1), 0, 1)
+            v = 1 - math.clamp(ry / math.max(svBox.AbsoluteSize.Y, 1), 0, 1)
+            applyHSV(true)
+        end
+
+        local function updateHue(input)
+            local ry = input.Position.Y - hueBar.AbsolutePosition.Y
+            h = math.clamp(ry / math.max(hueBar.AbsoluteSize.Y, 1), 0, 1)
+            applyHSV(true)
+        end
+
+        svBox.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                draggingSV = true
+                updateSV(input)
+            end
+        end)
+        hueBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                draggingHue = true
+                updateHue(input)
+            end
+        end)
+
+        svMoveConn = UIS.InputChanged:Connect(function(input)
+            if draggingSV and (input.UserInputType == Enum.UserInputType.MouseMovement
+                            or input.UserInputType == Enum.UserInputType.Touch) then
+                updateSV(input)
+            end
+        end)
+        hueMoveConn = UIS.InputChanged:Connect(function(input)
+            if draggingHue and (input.UserInputType == Enum.UserInputType.MouseMovement
+                             or input.UserInputType == Enum.UserInputType.Touch) then
+                updateHue(input)
+            end
+        end)
+        releaseConn = UIS.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                draggingSV = false
+                draggingHue = false
+            end
+        end)
+    end
+
+    swatch.MouseButton1Click:Connect(function()
+        if popupOpen then closePopup() else openPopup() end
+    end)
+
+    table.insert(window._cleanup, closePopup)
+
+    function handle:Get()        return currentColor end
+    function handle:Set(c)       setColor(c, true) end
+    function handle:SetSilent(c) setColor(c, false) end
+
+    return handle
+end
+
+-- =========================================================================
 -- Button
 -- =========================================================================
 -- Single-action button. Config:

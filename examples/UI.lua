@@ -1,4 +1,4 @@
--- UI_Test.lua — smoke test for the OvertimeUI library.
+-- UI.lua — smoke test for the OvertimeUI library.
 --
 -- Exercises every v0.1 control so you can eyeball the rendered window
 -- in-game. Run from your executor and expect a window with four tabs
@@ -52,6 +52,17 @@ EspSection:CreateToggle({
     Name = "Head Dot",
     CurrentValue = true,
     Callback = function(v) print("[UI_Test] HeadDot =", v) end,
+})
+
+EspSection:CreateColorPicker({
+    Name = "Highlight Color",
+    CurrentColor = Color3.fromRGB(255, 140, 60),
+    Callback = function(c)
+        print(string.format("[UI_Test] Highlight color = (%d, %d, %d)",
+            math.floor(c.R * 255 + 0.5),
+            math.floor(c.G * 255 + 0.5),
+            math.floor(c.B * 255 + 0.5)))
+    end,
 })
 
 -- Poll Box2D's attached keybind every frame. Lets us verify the inline
