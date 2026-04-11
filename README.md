@@ -2,7 +2,7 @@
 
 A single-file Roblox UI library for scripts loaded through the Overtime Executor (and any other executor with `loadstring` + `game:HttpGet` support).
 
-Tabs, toggles, sliders, dropdowns, buttons, keybinds, color pickers, labels, paragraphs, and toast notifications — everything you need to build a clean cheat-menu-style interface in ~20 lines of config.
+Tabs, toggles, sliders, dropdowns, buttons, keybinds, color pickers, labels, paragraphs, toast notifications, and FOV-circle overlays — everything you need to build a clean cheat-menu-style interface in ~20 lines of config.
 
 > **Scope:** this repository is the UI library only, and is MIT licensed. The Overtime Executor itself is closed source and is not distributed here.
 
@@ -59,11 +59,12 @@ Loading from `main` always gives you the latest; loading from a tag like `v0.1.0
 - **Keybinds** supporting keyboard, mouse 1/2/3, **and mouse 4/5** (most Roblox UI libraries cap out at LMB/RMB/MMB — see the note below)
 - **Inline attached keybinds** Linoria-style: `:AddKeybind{...}` on a toggle puts the rebind button on the same row
 - **Color pickers** with an HSV popup (saturation/value box + hue bar + hex readout)
+- **FOV-circle overlays** anchored to the crosshair for aimbot visualization, rendered behind the menu so they never occlude controls
 - **Labels** and **Paragraphs** for inline text / doc blocks
 - **Toast notifications** with a shared stack, TweenService slide-in/out, and auto-dismiss
 - **Self-contained lifecycle** — the library owns the ScreenGui and a `BoolValue` marker; re-running the script toggles the window off automatically
 - **Per-window accent color override** (defaults to sky blue)
-- **~1780 lines, single file, no external dependencies**
+- **~1910 lines, single file, no external dependencies**
 
 ## API reference
 
@@ -228,6 +229,32 @@ Fires a toast-style notification in the top-right corner. Notifications live in 
 | `Content` | string | `""` |
 | `Duration` | number | `4` (seconds) |
 | `Accent` | `Color3` | default sky blue |
+
+### `UI:CreateFovCircle(config)` → `FovCircle` handle
+
+Draws a circle overlay at the center of the game viewport for aimbot FOV visualization. The circle lives in its own shared ScreenGui at `DisplayOrder = -1` so it always renders behind window UIs and never occludes controls. It's not bound to any window — create it once, update it from your slider/toggle callbacks, and call `:Destroy()` from your `Window:OnClose` handler (or whenever your script unloads).
+
+| field | type | default |
+|---|---|---|
+| `Radius` | number | `100` (pixels, half-width) |
+| `Color` | `Color3` | white |
+| `Thickness` | number | `1` (outline px) |
+| `Filled` | boolean | `false` |
+| `FillTransparency` | number | `0.8` (0 = opaque, 1 = invisible) |
+| `Visible` | boolean | `true` |
+
+All setters silently ignore wrong-typed input — so you can bind them directly to slider and toggle callbacks without a guard wrapper. Calls after `:Destroy()` are no-ops.
+
+Handle methods:
+- `:SetRadius(r)` / `:GetRadius()` — radius in pixels, clamped to `>= 0`
+- `:SetColor(c)` / `:GetColor()` — outline and fill color
+- `:SetThickness(t)` / `:GetThickness()` — outline width in pixels
+- `:SetFilled(bool)` / `:IsFilled()` — show/hide the interior fill
+- `:SetFillTransparency(t)` / `:GetFillTransparency()` — clamped to `[0, 1]`
+- `:SetVisible(bool)` / `:IsVisible()` — show/hide the whole overlay
+- `:Destroy()` — idempotent; setters after destroy no-op silently
+
+Rendered as a single `Frame` + `UICorner` + `UIStroke` — no Drawing library, no image assets — so it works in any ScreenGui stack including CoreGui fallbacks.
 
 ## Mouse 4 / Mouse 5 detection
 

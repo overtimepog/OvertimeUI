@@ -4,9 +4,10 @@
 -- public API surface: Toggle Get/Set/SetSilent, Slider clamping and
 -- increment snapping, Dropdown Refresh, Keybind rebinding, Toggle:Add
 -- Keybind (including the double-call no-op warning), ColorPicker
--- Get/Set/SetSilent with non-Color3 rejection, Button/Label/Paragraph
--- updaters, UI:Notify, and Window lifecycle (OnClose firing on Destroy,
--- re-run toggle-off via marker handshake).
+-- Get/Set/SetSilent with non-Color3 rejection, FovCircle radius/color/
+-- visibility/fill updates with input clamping and Destroy idempotence,
+-- Button/Label/Paragraph updaters, UI:Notify, and Window lifecycle
+-- (OnClose firing on Destroy, re-run toggle-off via marker handshake).
 --
 -- Each test is pcall-guarded with PASS/FAIL printed to the executor
 -- console, then the pass/fail count is pushed back into the UI itself
@@ -549,6 +550,113 @@ test("ColorPicker :Set silently ignores non-Color3 values", function()
 end)
 
 -- =========================================================================
+-- FovCircle tests
+-- =========================================================================
+-- Each test creates its own circle and destroys it at the end so the
+-- screen doesn't end up with a stack of overlays when the run is over.
+
+test("FovCircle :GetRadius returns the initial radius", function()
+    local fc = UI:CreateFovCircle({ Radius = 120, Visible = false })
+    assertEq(fc:GetRadius(), 120, "initial GetRadius")
+    fc:Destroy()
+end)
+
+test("FovCircle defaults to radius 100 when omitted", function()
+    local fc = UI:CreateFovCircle({ Visible = false })
+    assertEq(fc:GetRadius(), 100, "default radius")
+    fc:Destroy()
+end)
+
+test("FovCircle :SetRadius updates and clamps negatives to 0", function()
+    local fc = UI:CreateFovCircle({ Radius = 50, Visible = false })
+    fc:SetRadius(200)
+    assertEq(fc:GetRadius(), 200, "after SetRadius(200)")
+    fc:SetRadius(-5)
+    assertEq(fc:GetRadius(), 0, "negative radius clamped to 0")
+    fc:Destroy()
+end)
+
+test("FovCircle :SetRadius ignores non-number input", function()
+    local fc = UI:CreateFovCircle({ Radius = 75, Visible = false })
+    fc:SetRadius("wide")
+    fc:SetRadius(nil)
+    fc:SetRadius({})
+    assertEq(fc:GetRadius(), 75, "radius unchanged after bad inputs")
+    fc:Destroy()
+end)
+
+test("FovCircle :GetColor returns initial and :SetColor updates", function()
+    local fc = UI:CreateFovCircle({
+        Color = Color3.fromRGB(255, 140, 60),
+        Visible = false,
+    })
+    assertColorEq(fc:GetColor(), Color3.fromRGB(255, 140, 60), nil, "initial GetColor")
+    fc:SetColor(Color3.fromRGB(80, 180, 255))
+    assertColorEq(fc:GetColor(), Color3.fromRGB(80, 180, 255), nil, "after SetColor")
+    fc:Destroy()
+end)
+
+test("FovCircle :SetColor ignores non-Color3 input", function()
+    local original = Color3.fromRGB(120, 200, 120)
+    local fc = UI:CreateFovCircle({ Color = original, Visible = false })
+    fc:SetColor("red")
+    fc:SetColor(42)
+    fc:SetColor(nil)
+    assertColorEq(fc:GetColor(), original, nil, "color unchanged after bad inputs")
+    fc:Destroy()
+end)
+
+test("FovCircle :SetVisible and :IsVisible toggle cleanly", function()
+    local fc = UI:CreateFovCircle({ Visible = false })
+    assertEq(fc:IsVisible(), false, "initial (Visible = false)")
+    fc:SetVisible(true)
+    assertEq(fc:IsVisible(), true, "after SetVisible(true)")
+    fc:SetVisible(false)
+    assertEq(fc:IsVisible(), false, "after SetVisible(false)")
+    fc:Destroy()
+end)
+
+test("FovCircle defaults Visible to true when omitted", function()
+    local fc = UI:CreateFovCircle({ Radius = 10 })  -- Visible omitted
+    assertEq(fc:IsVisible(), true, "default visibility")
+    fc:SetVisible(false)  -- hide so it doesn't pile on screen
+    fc:Destroy()
+end)
+
+test("FovCircle :SetFilled and :IsFilled toggle cleanly", function()
+    local fc = UI:CreateFovCircle({ Visible = false })
+    assertEq(fc:IsFilled(), false, "default Filled = false")
+    fc:SetFilled(true)
+    assertEq(fc:IsFilled(), true, "after SetFilled(true)")
+    fc:SetFilled(false)
+    assertEq(fc:IsFilled(), false, "after SetFilled(false)")
+    fc:Destroy()
+end)
+
+test("FovCircle :SetFillTransparency clamps to [0, 1]", function()
+    local fc = UI:CreateFovCircle({ Visible = false })
+    fc:SetFillTransparency(0.3)
+    assertApprox(fc:GetFillTransparency(), 0.3, 1e-6, "in-range")
+    fc:SetFillTransparency(-2)
+    assertApprox(fc:GetFillTransparency(), 0, 1e-6, "below-range clamped to 0")
+    fc:SetFillTransparency(5)
+    assertApprox(fc:GetFillTransparency(), 1, 1e-6, "above-range clamped to 1")
+    fc:Destroy()
+end)
+
+test("FovCircle :Destroy is idempotent and setters no-op after", function()
+    local fc = UI:CreateFovCircle({ Radius = 60, Visible = false })
+    fc:Destroy()
+    fc:Destroy()  -- second call must not error
+    -- Setters after destroy should silently no-op; getters return the
+    -- last value the handle recorded (nothing throws).
+    fc:SetRadius(999)
+    fc:SetColor(Color3.fromRGB(1, 2, 3))
+    fc:SetVisible(true)
+    assertEq(fc:GetRadius(), 60, "radius should not change after destroy")
+end)
+
+-- =========================================================================
 -- Button / Label / Paragraph updater tests
 -- =========================================================================
 
@@ -669,9 +777,9 @@ if failed == 0 then
     summaryPara:SetTitle("✓ All tests passed")
     summaryPara:SetContent(string.format(
         "All %d automated tests passed. Every Window / Tab / Section / Toggle / "
-        .. "Slider / Dropdown / Keybind / ColorPicker / Button / Label / Paragraph / "
-        .. "Notify / lifecycle assertion succeeded. The test artifacts below show "
-        .. "the final state of every control the suite exercised.", passed))
+        .. "Slider / Dropdown / Keybind / ColorPicker / FovCircle / Button / Label / "
+        .. "Paragraph / Notify / lifecycle assertion succeeded. The test artifacts "
+        .. "below show the final state of every control the suite exercised.", passed))
     UI:Notify({
         Title    = "OvertimeUI self-test",
         Content  = string.format("All %d tests passed", passed),

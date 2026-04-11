@@ -1783,4 +1783,132 @@ function OvertimeUI:Notify(cfg)
     end)
 end
 
+-- =========================================================================
+-- FOV circle — screen overlay for aimbot field-of-view visualization
+-- =========================================================================
+-- UI:CreateFovCircle{
+--     Radius           = 100,                           -- pixels (half-width)
+--     Color            = Color3.fromRGB(255, 255, 255), -- outline + fill
+--     Thickness        = 1,                             -- outline thickness
+--     Filled           = false,                         -- fill interior
+--     FillTransparency = 0.8,                           -- 0=opaque 1=invisible
+--     Visible          = true,
+-- }
+--
+-- Returns a handle with SetRadius / SetColor / SetThickness / SetFilled /
+-- SetFillTransparency / SetVisible plus matching getters, and :Destroy.
+-- All setters silently ignore wrong-typed input (Set(nil) / Set("x") etc.)
+-- so scripts can bind them directly to slider/toggle callbacks without a
+-- guard wrapper; calls after :Destroy are no-ops.
+--
+-- The circle is a single Frame with UICorner = UDim.new(1, 0) for the
+-- rounded shape and a UIStroke for the outline — no Drawing library, no
+-- image assets, works anywhere a ScreenGui does. All FOV circles share a
+-- lazily-created ScreenGui at DisplayOrder = -1 so they always render
+-- behind window UIs. Anchored to the center of the game viewport
+-- (IgnoreGuiInset = false) so the circle sits on the crosshair, not on
+-- the absolute screen center (which the topbar would offset).
+
+local fovGui
+
+local function ensureFovContainer()
+    if fovGui and fovGui.Parent then return end
+    fovGui = Create("ScreenGui", {
+        Name = "OvertimeUI_FovCircles",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = -1,
+        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
+    })
+end
+
+function OvertimeUI:CreateFovCircle(cfg)
+    cfg = cfg or {}
+    ensureFovContainer()
+
+    local radius    = (type(cfg.Radius)    == "number") and math.max(cfg.Radius, 0) or 100
+    local color     = (typeof(cfg.Color)   == "Color3") and cfg.Color or Color3.fromRGB(255, 255, 255)
+    local thickness = (type(cfg.Thickness) == "number") and math.max(cfg.Thickness, 0) or 1
+    local filled    = cfg.Filled == true
+    local fillTrans = (type(cfg.FillTransparency) == "number") and math.clamp(cfg.FillTransparency, 0, 1) or 0.8
+    local visible   = cfg.Visible ~= false  -- defaults to true
+
+    local frame = Create("Frame", {
+        Name = "FovCircle",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.fromOffset(radius * 2, radius * 2),
+        BackgroundColor3 = color,
+        BackgroundTransparency = filled and fillTrans or 1,
+        BorderSizePixel = 0,
+        Visible = visible,
+        Parent = fovGui,
+    })
+    Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = frame })
+    local strokeInst = Create("UIStroke", {
+        Color = color,
+        Thickness = thickness,
+        Parent = frame,
+    })
+
+    local handle = { Type = "FovCircle" }
+    local destroyed = false
+
+    function handle:SetRadius(r)
+        if destroyed or type(r) ~= "number" then return end
+        radius = math.max(r, 0)
+        frame.Size = UDim2.fromOffset(radius * 2, radius * 2)
+    end
+    function handle:GetRadius() return radius end
+
+    function handle:SetColor(c)
+        if destroyed or typeof(c) ~= "Color3" then return end
+        color = c
+        frame.BackgroundColor3 = c
+        strokeInst.Color = c
+    end
+    function handle:GetColor() return color end
+
+    function handle:SetThickness(t)
+        if destroyed or type(t) ~= "number" then return end
+        thickness = math.max(t, 0)
+        strokeInst.Thickness = thickness
+    end
+    function handle:GetThickness() return thickness end
+
+    function handle:SetFilled(f)
+        if destroyed then return end
+        filled = f == true
+        frame.BackgroundTransparency = filled and fillTrans or 1
+    end
+    function handle:IsFilled() return filled end
+
+    function handle:SetFillTransparency(t)
+        if destroyed or type(t) ~= "number" then return end
+        fillTrans = math.clamp(t, 0, 1)
+        if filled then
+            frame.BackgroundTransparency = fillTrans
+        end
+    end
+    function handle:GetFillTransparency() return fillTrans end
+
+    function handle:SetVisible(v)
+        if destroyed then return end
+        visible = v ~= false
+        frame.Visible = visible
+    end
+    function handle:IsVisible() return visible end
+
+    function handle:Destroy()
+        if destroyed then return end
+        destroyed = true
+        if frame then
+            frame:Destroy()
+            frame = nil
+        end
+    end
+
+    return handle
+end
+
 return OvertimeUI

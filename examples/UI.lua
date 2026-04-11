@@ -144,6 +144,63 @@ local AimKeyBind = AimSection:CreateKeybind({
     Callback = function(k) print("[UI_Test] Aim Key rebound to:", k) end,
 })
 
+-- FOV circle demo. UI:CreateFovCircle returns a standalone handle (not
+-- bound to a section) that draws a circle at the game viewport's center.
+-- The controls below update the circle live; the OnClose at the bottom
+-- of this script tears it down with the window.
+local FovCircleSection = AimbotTab:CreateSection("FOV Circle")
+
+local fovCircle = UI:CreateFovCircle({
+    Radius    = 120,
+    Color     = Color3.fromRGB(255, 140, 60),
+    Thickness = 1,
+    Visible   = false,
+})
+
+FovCircleSection:CreateToggle({
+    Name = "Show FOV Circle",
+    CurrentValue = false,
+    Callback = function(v) fovCircle:SetVisible(v) end,
+})
+
+FovCircleSection:CreateSlider({
+    Name = "Radius",
+    Range = {20, 400},
+    Increment = 5,
+    CurrentValue = 120,
+    Suffix = " px",
+    Callback = function(v) fovCircle:SetRadius(v) end,
+})
+
+FovCircleSection:CreateSlider({
+    Name = "Outline Thickness",
+    Range = {0, 6},
+    Increment = 1,
+    CurrentValue = 1,
+    Suffix = " px",
+    Callback = function(v) fovCircle:SetThickness(v) end,
+})
+
+FovCircleSection:CreateColorPicker({
+    Name = "Color",
+    CurrentColor = Color3.fromRGB(255, 140, 60),
+    Callback = function(c) fovCircle:SetColor(c) end,
+})
+
+FovCircleSection:CreateToggle({
+    Name = "Filled",
+    CurrentValue = false,
+    Callback = function(v) fovCircle:SetFilled(v) end,
+})
+
+FovCircleSection:CreateSlider({
+    Name = "Fill Transparency",
+    Range = {0, 1},
+    Increment = 0.05,
+    CurrentValue = 0.8,
+    Callback = function(v) fovCircle:SetFillTransparency(v) end,
+})
+
 -- Poll :IsHeld() every frame on a spare thread and print when the state
 -- changes. This is the same pattern as Box2D above but for the standalone
 -- keybind. Used to verify Mouse4/Mouse5 detection still works after the
@@ -243,6 +300,7 @@ end)
 -- =========================================================================
 Window:OnClose(function()
     print("[UI_Test] Window closed — OnClose callback fired")
+    fovCircle:Destroy()
 end)
 
 print("[UI_Test] Ready. Every tab has something to click.")
