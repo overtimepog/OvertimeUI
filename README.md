@@ -4,6 +4,8 @@ A single-file Roblox UI library for scripts loaded through the Overtime Executor
 
 Tabs, toggles, sliders, dropdowns, buttons, keybinds, labels, paragraphs, and toast notifications — everything you need to build a clean cheat-menu-style interface in ~20 lines of config.
 
+> **Scope:** this repository is the UI library only, and is MIT licensed. The Overtime Executor itself is closed source and is not distributed here.
+
 ## Quick start
 
 ```lua
@@ -224,7 +226,7 @@ Those globals are backed by a `GetAsyncKeyState(VK_XBUTTON1/VK_XBUTTON2)` call o
 
 **On any executor that doesn't expose those globals, the library silently degrades** — mouse 4/5 always report `false` and the rebind picker can't capture them, but every other control works exactly as before. You'll still get keyboard and MB1/2/3 support everywhere.
 
-If you want mouse 4/5 support in your own executor, the relevant changes are [publicly available in the Overtime Executor repository](https://github.com/overtimepog/) — roughly 20 lines of C++ (`GetAsyncKeyState` wrappers exposed via a local HTTP endpoint and a pair of Lua globals).
+The Overtime Executor itself is closed source, so there's no public diff to point at — but if you're building your own executor and want mouse 4/5 support, the approach is straightforward: roughly 20 lines of C++ wrapping `GetAsyncKeyState(VK_XBUTTON1/VK_XBUTTON2)` and exposing the results to Lua as `isMouse4Down()` / `isMouse5Down()` globals (directly, or via a local HTTP bridge if your executor runs out-of-process).
 
 ## Lifecycle and re-run semantics
 
