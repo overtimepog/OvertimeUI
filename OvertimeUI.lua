@@ -77,7 +77,7 @@ local SHADOW_SLICE = Rect.new(49, 49, 450, 450)
 -- One shared tween spec set so motion feels consistent across every control.
 local EASE      = Enum.EasingStyle.Quint
 local EASE_OUT  = Enum.EasingDirection.Out
-local SPRING     = Enum.EasingStyle.Back   -- playful overshoot for toggles/knobs
+local SPRING     = Enum.EasingStyle.Back   -- subtle overshoot, window arrival only
 local T_FAST     = 0.12
 local T_NORMAL   = 0.18
 local T_SLOW     = 0.28
@@ -376,11 +376,11 @@ function Section:CreateToggle(cfg)
         Parent = self.container,
     })
 
-    -- Pill-style switch: a rounded track whose colour tweens between
-    -- surface (off) and accent (on), with a knob that slides across and
-    -- overshoots slightly (Back easing) for a tactile feel. Replaces the
-    -- old flat checkbox.
-    local TRACK_W, TRACK_H, KNOB = 34, 18, 12
+    -- Flat pill switch (Fluent-style): track tints surface→accent, a plain
+    -- dot slides across. No glow halo, no overshoot — clean motion only.
+    -- Off knob is a muted dot; on knob is white, so the state reads at a
+    -- glance even before you clock the track colour.
+    local TRACK_W, TRACK_H, KNOB = 36, 18, 14
     local track = Create("Frame", {
         Size = UDim2.fromOffset(TRACK_W, TRACK_H),
         Position = UDim2.new(0, 2, 0.5, -TRACK_H / 2),
@@ -391,15 +391,12 @@ function Section:CreateToggle(cfg)
     corner(track, TRACK_H / 2)
     local trackStroke = stroke(track, state and theme.accent or theme.border, 1)
 
-    -- Tinted glow behind the track, faded in only while the toggle is on.
-    local glow = shadow(track, 10, state and 0.4 or 1, theme.accentGlow)
-
-    local knobOffOff = 3                          -- knob x when off
-    local knobOnOff  = TRACK_W - KNOB - 3         -- knob x when on
+    local knobOffOff = 2                          -- knob x when off
+    local knobOnOff  = TRACK_W - KNOB - 2         -- knob x when on
     local knob = Create("Frame", {
         Size = UDim2.fromOffset(KNOB, KNOB),
         Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
-        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.textDim,
         BorderSizePixel = 0,
         Parent = track,
     })
@@ -423,11 +420,11 @@ function Section:CreateToggle(cfg)
         state = v
         tween(track, { BackgroundColor3 = state and theme.accent or theme.surface }, T_NORMAL)
         tween(trackStroke, { Color = state and theme.accent or theme.border }, T_NORMAL)
-        tween(glow, { ImageTransparency = state and 0.4 or 1 }, T_NORMAL)
         tween(label, { TextColor3 = state and theme.text or theme.textDim }, T_NORMAL)
-        tween(knob,
-            { Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2) },
-            T_NORMAL, SPRING)
+        tween(knob, {
+            Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
+            BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.textDim,
+        }, T_NORMAL)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, state)
         end
@@ -582,17 +579,18 @@ function Section:CreateSlider(cfg)
     })
 
     -- Track (background) and fill (foreground). The fill is a child of the
-    -- track, sized 0..1 scale proportional to (value-min)/(max-min). A round
-    -- thumb rides the leading edge of the fill, with a soft accent glow.
+    -- track, sized 0..1 scale proportional to (value-min)/(max-min). A small
+    -- round thumb rides the leading edge of the fill — flat, no glow/shadow,
+    -- just a white dot with a thin accent ring (Fluent-style).
     local track = Create("Frame", {
-        Size = UDim2.new(1, -4, 0, 6),
-        Position = UDim2.new(0, 2, 0, 24),
+        Size = UDim2.new(1, -4, 0, 4),
+        Position = UDim2.new(0, 2, 0, 25),
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
         Active = true, -- required for InputBegan to fire on the track
         Parent = row,
     })
-    corner(track, 3)
+    corner(track, 2)
 
     local fill = Create("Frame", {
         Size = UDim2.new(0, 0, 1, 0),
@@ -600,8 +598,7 @@ function Section:CreateSlider(cfg)
         BorderSizePixel = 0,
         Parent = track,
     })
-    corner(fill, 3)
-    sheen(fill, 0.18)
+    corner(fill, 2)
 
     local thumb = Create("Frame", {
         Size = UDim2.fromOffset(12, 12),
@@ -613,8 +610,7 @@ function Section:CreateSlider(cfg)
         Parent = fill,
     })
     corner(thumb, 6)
-    stroke(thumb, theme.accent, 2)
-    shadow(thumb, 8, 0.45, theme.accentGlow)
+    stroke(thumb, theme.accent, 1.5)
 
     -- Formats a value for display. Integer step -> integer; sub-integer
     -- step -> two decimal places (enough precision for 0.01 increments
@@ -694,7 +690,7 @@ function Section:CreateSlider(cfg)
 
     -- Thumb grows on hover for a touch of tactility.
     track.MouseEnter:Connect(function()
-        tween(thumb, { Size = UDim2.fromOffset(15, 15) }, T_FAST)
+        tween(thumb, { Size = UDim2.fromOffset(14, 14) }, T_FAST)
     end)
     track.MouseLeave:Connect(function()
         if not dragging then tween(thumb, { Size = UDim2.fromOffset(12, 12) }, T_FAST) end
@@ -828,14 +824,14 @@ function Section:CreateDropdown(cfg)
         })
         corner(popupFrame, 6)
         stroke(popupFrame, theme.borderHi, 1)
-        shadow(popupFrame, 22, 0.5)
+        shadow(popupFrame, 18, 0.7)
 
         -- Entrance: expand from a sliver + fade in, with a UIScale so the
         -- corner stays anchored to the button rather than scaling centrally.
         local uiscale = Create("UIScale", { Scale = 0.96, Parent = popupFrame })
         popupFrame.Size = UDim2.fromOffset(btn.AbsoluteSize.X, 0)
         tween(popupFrame, { Size = UDim2.fromOffset(btn.AbsoluteSize.X, totalH) }, T_NORMAL)
-        tween(uiscale, { Scale = 1 }, T_NORMAL, SPRING)
+        tween(uiscale, { Scale = 1 }, T_NORMAL)
 
         local scroll = Create("ScrollingFrame", {
             Size = UDim2.new(1, -4, 1, -4),
@@ -1056,9 +1052,9 @@ function Section:CreateColorPicker(cfg)
         })
         corner(popupFrame, 6)
         stroke(popupFrame, theme.borderHi, 1)
-        shadow(popupFrame, 24, 0.5)
+        shadow(popupFrame, 18, 0.7)
         local cpScale = Create("UIScale", { Scale = 0.94, Parent = popupFrame })
-        tween(cpScale, { Scale = 1 }, T_NORMAL, SPRING)
+        tween(cpScale, { Scale = 1 }, T_NORMAL)
 
         -- Saturation/Value box. The base frame is the pure hue; a
         -- horizontal white→transparent gradient gives the saturation
@@ -1263,9 +1259,8 @@ function Section:CreateButton(cfg)
         LayoutOrder = self:_next(),
         Parent = self.container,
     })
-    corner(btn, 6)
+    corner(btn, 5)
     local btnStroke = stroke(btn, theme.border, 1)
-    sheen(btn, 0.05)
 
     local armedForConfirm = false
     local armedUntil = 0
@@ -1834,7 +1829,7 @@ function Window:SwitchTab(tab)
         if t.indicator then
             tween(t.indicator,
                 { Size = UDim2.new(0, 3, 0, active and 16 or 0) },
-                T_NORMAL, active and SPRING or EASE)
+                T_NORMAL)
         end
     end
     self.activeTab = tab
@@ -2022,9 +2017,9 @@ function OvertimeUI:CreateWindow(cfg)
         ZIndex = 2,
         Parent = gui,
     })
-    corner(panel, 12)
+    corner(panel, 10)
     stroke(panel, self.theme.border, 1)
-    sheen(panel, 0.10)
+    sheen(panel, 0.05)
     self.panel = panel
 
     -- Drop shadow lives in a sibling holder *behind* the panel (a child of
@@ -2038,7 +2033,10 @@ function OvertimeUI:CreateWindow(cfg)
         ZIndex = 1,
         Parent = gui,
     })
-    shadow(shadowHolder, 34, 0.45)
+    -- The ONE shadow in the whole UI: a single soft drop behind the root
+    -- window so it lifts off the game world. Kept faint (Rayfield-style ~0.65)
+    -- — every control-level glow/shadow has been removed for a flat look.
+    shadow(shadowHolder, 30, 0.65)
     self._shadowHolder = shadowHolder
 
     -- Entrance: gentle scale-up + fade so the window arrives instead of
@@ -2070,9 +2068,6 @@ function OvertimeUI:CreateWindow(cfg)
         Parent = titleBar,
     })
     corner(accentStripe, 2)
-    -- Soft halo behind the bar (sits lower so it reads as a glow, not a box).
-    local stripeGlow = shadow(accentStripe, 10, 0.25, self.theme.accentGlow)
-    stripeGlow.ZIndex = 2
 
     Create("TextLabel", {
         Size = UDim2.new(1, -120, 0, cfg.SubTitle and 16 or 36),
@@ -2278,13 +2273,27 @@ local notifyOrder  = 0
 
 local function ensureNotifyContainer()
     if notifyGui and notifyGui.Parent then return end
-    notifyGui = Create("ScreenGui", {
-        Name = "OvertimeUI_Notifications",
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        IgnoreGuiInset = true,
-        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
-    })
+    -- Adopt an existing container if one's already in PlayerGui. Each
+    -- loadstring(OvertimeUI)() builds a fresh module with its own nil
+    -- notifyGui upvalue, so without this every script re-load would spawn
+    -- another empty ScreenGui that never gets cleaned up. Reusing by name
+    -- keeps exactly one shared container no matter how many times we load.
+    local parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui")
+    local existing = parent:FindFirstChild("OvertimeUI_Notifications")
+    if existing then
+        notifyGui = existing
+        notifyStack = existing:FindFirstChild("Stack")
+        if notifyStack then return end
+        existing:ClearAllChildren()
+    else
+        notifyGui = Create("ScreenGui", {
+            Name = "OvertimeUI_Notifications",
+            ResetOnSpawn = false,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+            IgnoreGuiInset = true,
+            Parent = parent,
+        })
+    end
     notifyStack = Create("Frame", {
         Name = "Stack",
         Size = UDim2.new(0, 320, 1, -40),
@@ -2322,9 +2331,8 @@ function OvertimeUI:Notify(cfg)
         LayoutOrder = notifyOrder,
         Parent = notifyStack,
     })
-    corner(toast, 10)
+    corner(toast, 8)
     stroke(toast, theme.borderHi, 1)
-    sheen(toast, 0.08)
 
     local stripe = Create("Frame", {
         Size = UDim2.new(0, 3, 1, -14),
@@ -2335,8 +2343,6 @@ function OvertimeUI:Notify(cfg)
         Parent = toast,
     })
     corner(stripe, 2)
-    local sGlow = shadow(stripe, 9, 0.3, theme.accent)
-    sGlow.ZIndex = 1
 
     -- Countdown bar pinned to the bottom edge; shrinks to zero over the
     -- toast's lifetime so the user can see how long it'll stay up.
@@ -2514,13 +2520,23 @@ local OVERLAY_ORDER = 10
 
 local function ensureOverlay()
     if overlayGui and overlayGui.Parent then return overlayGui end
+    -- Adopt an existing overlay if present (see ensureNotifyContainer) so
+    -- repeated script loads share one ScreenGui instead of leaving a trail
+    -- of empty ones behind.
+    local parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui")
+    local existing = parent:FindFirstChild("OvertimeUI_Overlay")
+    if existing then
+        overlayGui = existing
+        overlayGui.DisplayOrder = OVERLAY_ORDER
+        return overlayGui
+    end
     overlayGui = Create("ScreenGui", {
         Name = "OvertimeUI_Overlay",
         ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         DisplayOrder = OVERLAY_ORDER,
         IgnoreGuiInset = true,
-        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
+        Parent = parent,
     })
     return overlayGui
 end
@@ -2794,8 +2810,8 @@ end
 -- =========================================================================
 -- Watermark — a small draggable status chip (name / FPS / ping / build).
 -- =========================================================================
--- A classic decoration: a rounded chip with an accent stripe + glow that
--- sits in a corner and shows live text. Returns a handle with :SetText,
+-- A classic decoration: a rounded chip with an accent stripe that sits in a
+-- corner and shows live text. Returns a handle with :SetText,
 -- :SetAccent, :SetVisible, :Destroy. Drag it anywhere.
 function OvertimeUI:CreateWatermark(cfg)
     cfg = cfg or {}
@@ -2815,8 +2831,8 @@ function OvertimeUI:CreateWatermark(cfg)
     })
     corner(chip, 8)
     stroke(chip, theme.borderHi, 1)
-    sheen(chip, 0.10)
-    shadow(chip, 18, 0.45)
+    -- One faint drop so the floating chip lifts off the game world; no glow.
+    shadow(chip, 16, 0.7)
 
     local stripe = Create("Frame", {
         Size = UDim2.new(0, 3, 1, -12),
@@ -2827,8 +2843,6 @@ function OvertimeUI:CreateWatermark(cfg)
         Parent = chip,
     })
     corner(stripe, 2)
-    local sGlow = shadow(stripe, 9, 0.3, theme.accent)
-    sGlow.ZIndex = 1
 
     local lbl = Create("TextLabel", {
         Size = UDim2.new(1, -22, 1, 0),
@@ -2868,7 +2882,7 @@ function OvertimeUI:CreateWatermark(cfg)
     function handle:SetText(t) if not destroyed then lbl.Text = tostring(t) end return self end
     function handle:SetAccent(c)
         if destroyed or typeof(c) ~= "Color3" then return self end
-        stripe.BackgroundColor3 = c ; sGlow.ImageColor3 = c
+        stripe.BackgroundColor3 = c
         return self
     end
     function handle:SetVisible(v) if not destroyed then chip.Visible = v ~= false end return self end
