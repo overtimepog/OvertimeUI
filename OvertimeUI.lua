@@ -2444,16 +2444,25 @@ end
 -- first person, custom camera scripts). A one-shot
 -- `UIS.MouseBehavior = Default` gets stomped on the next frame, so
 -- SetMouseFree(true) re-asserts it on Heartbeat for as long as it's on.
--- SetMouseFree(false) stops asserting and hands control back to the game.
--- The state is process-global (the mouse is a shared resource), so the
--- typical pattern is to free it when your menu opens and release it when
--- the menu hides — see :SetVisible. Idempotent; safe to call repeatedly.
+--
+-- SetMouseFree(false) must ACTIVELY hand the mouse back, not just stop
+-- asserting: plenty of games only set their lock once (not every frame), so
+-- merely disconnecting would leave the cursor free forever and you could
+-- never swap back to playing. So on free we snapshot the game's mouse state
+-- and on release we restore it — falling back to LockCenter + hidden icon if
+-- the snapshot was itself a free state, so a first-person game always
+-- returns to locked play. The state is process-global (the mouse is shared);
+-- idempotent and safe to call repeatedly.
 
 local mouseFreeConn
+local mouseSavedBehavior, mouseSavedIcon
 function OvertimeUI:SetMouseFree(state)
     state = state ~= false  -- nil/true -> free; false -> release
     if state then
         if mouseFreeConn then return end
+        -- Snapshot what the game had so release can put it back.
+        mouseSavedBehavior = UIS.MouseBehavior
+        mouseSavedIcon     = UIS.MouseIconEnabled
         mouseFreeConn = RunService.Heartbeat:Connect(function()
             if UIS.MouseBehavior ~= Enum.MouseBehavior.Default then
                 UIS.MouseBehavior = Enum.MouseBehavior.Default
@@ -2465,6 +2474,24 @@ function OvertimeUI:SetMouseFree(state)
     elseif mouseFreeConn then
         mouseFreeConn:Disconnect()
         mouseFreeConn = nil
+        -- Re-lock to whatever the game had when we freed it. If that snapshot
+        -- was itself a free/Default state (or unknown) it's unreliable — the
+        -- captured icon would be "visible" too — so use the locked-play
+        -- default (LockCenter + hidden cursor) instead of faithfully
+        -- restoring a loose state.
+        local behavior = mouseSavedBehavior
+        local icon     = mouseSavedIcon
+        if behavior == nil or behavior == Enum.MouseBehavior.Default then
+            behavior = Enum.MouseBehavior.LockCenter
+            icon     = false
+        end
+        UIS.MouseBehavior = behavior
+        if icon ~= nil then
+            UIS.MouseIconEnabled = icon
+        else
+            UIS.MouseIconEnabled = false
+        end
+        mouseSavedBehavior, mouseSavedIcon = nil, nil
     end
 end
 
