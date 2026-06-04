@@ -49,17 +49,38 @@ local FONT_SEMI   = Enum.Font.GothamMedium
 -- field in CreateWindow config. Everything else is shared.
 local function defaultTheme()
     return {
-        bg          = Color3.fromRGB(14, 16, 22),
-        bgAlt       = Color3.fromRGB(18, 21, 28),
-        surface     = Color3.fromRGB(28, 32, 42),
-        surfaceHi   = Color3.fromRGB(36, 41, 54),
-        border      = Color3.fromRGB(48, 54, 68),
-        accent      = Color3.fromRGB(90, 180, 255),
-        text        = Color3.fromRGB(232, 234, 242),
-        textDim     = Color3.fromRGB(150, 156, 170),
-        danger      = Color3.fromRGB(220, 80, 80),
+        -- Elevation ramp: each step a little lighter than the last so
+        -- stacked surfaces read as physical layers instead of flat panes.
+        bg          = Color3.fromRGB(11, 12, 17),   -- panel base (darkest)
+        bgAlt       = Color3.fromRGB(16, 18, 25),   -- sidebars / body
+        surface     = Color3.fromRGB(26, 29, 40),   -- controls at rest
+        surfaceHi   = Color3.fromRGB(38, 43, 58),   -- hover / active
+        border      = Color3.fromRGB(42, 47, 62),   -- hairlines (low contrast)
+        borderHi    = Color3.fromRGB(64, 72, 92),   -- focused / hovered edges
+        accent      = Color3.fromRGB(96, 165, 255),
+        accentDim   = Color3.fromRGB(54, 92, 150),  -- muted accent for fills
+        accentGlow  = Color3.fromRGB(120, 180, 255),-- glow tint
+        text        = Color3.fromRGB(236, 238, 246),
+        textDim     = Color3.fromRGB(138, 145, 162),
+        danger      = Color3.fromRGB(235, 92, 96),
+        shadow      = Color3.fromRGB(0, 0, 0),
     }
 end
+
+-- Shadow / glow image. A soft 9-slice drop shadow used behind the panel and
+-- as a tinted glow behind active elements. If this asset ever fails to load
+-- in a given environment, swap it for rbxassetid://1316045217 (radial) —
+-- the SliceCenter below is tuned for 6014261993.
+local SHADOW_ASSET = "rbxassetid://6014261993"
+local SHADOW_SLICE = Rect.new(49, 49, 450, 450)
+
+-- One shared tween spec set so motion feels consistent across every control.
+local EASE      = Enum.EasingStyle.Quint
+local EASE_OUT  = Enum.EasingDirection.Out
+local SPRING     = Enum.EasingStyle.Back   -- playful overshoot for toggles/knobs
+local T_FAST     = 0.12
+local T_NORMAL   = 0.18
+local T_SLOW     = 0.28
 
 -- =========================================================================
 -- Mouse X-button cache
@@ -163,6 +184,63 @@ local function stroke(parent, color, thickness)
     return Create("UIStroke", { Color = color, Thickness = thickness or 1, Parent = parent })
 end
 
+-- Fire-and-forget tween. Returns the Tween so callers can hook .Completed.
+local function tween(inst, props, time, style, dir)
+    local info = TweenInfo.new(time or T_NORMAL, style or EASE, dir or EASE_OUT)
+    local tw = TweenService:Create(inst, info, props)
+    tw:Play()
+    return tw
+end
+
+-- Vertical sheen: a subtle top-lighter / bottom-darker gradient that gives
+-- a flat fill the sense of a lit surface. Brightness is a small +/- offset
+-- applied symmetrically around the parent's own color.
+local function sheen(parent, strength)
+    strength = strength or 0.06
+    return Create("UIGradient", {
+        Rotation = 90,
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(
+                math.floor((1 - strength) * 255),
+                math.floor((1 - strength) * 255),
+                math.floor((1 - strength) * 255))),
+        }),
+        Parent = parent,
+    })
+end
+
+-- Soft drop shadow placed *behind* `parent` (as a sibling, lower ZIndex).
+-- `spread` grows the shadow past the parent's bounds; `transparency` sets
+-- how dark it is. Returns the ImageLabel so it can be retinted into a glow.
+local function shadow(parent, spread, transparency, color)
+    local img = Create("ImageLabel", {
+        Name = "Shadow",
+        BackgroundTransparency = 1,
+        Image = SHADOW_ASSET,
+        ImageColor3 = color or Color3.new(0, 0, 0),
+        ImageTransparency = transparency or 0.55,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = SHADOW_SLICE,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(1, (spread or 24) * 2, 1, (spread or 24) * 2),
+        ZIndex = (parent.ZIndex or 1) - 1,
+        Parent = parent,
+    })
+    return img
+end
+
+local function padding(parent, t, b, l, r)
+    return Create("UIPadding", {
+        PaddingTop    = UDim.new(0, t or 0),
+        PaddingBottom = UDim.new(0, b or t or 0),
+        PaddingLeft   = UDim.new(0, l or 0),
+        PaddingRight  = UDim.new(0, r or l or 0),
+        Parent = parent,
+    })
+end
+
 -- =========================================================================
 -- Shared keybind button builder
 -- =========================================================================
@@ -196,8 +274,19 @@ local function buildKeybindControl(theme, parent, initialKey, position, size, on
         AutoButtonColor = false,
         Parent = parent,
     })
-    corner(btn, 3)
-    stroke(btn, theme.border, 1)
+    corner(btn, 4)
+    local btnStroke = stroke(btn, theme.border, 1)
+
+    btn.MouseEnter:Connect(function()
+        if rebinding then return end
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+        tween(btnStroke, { Color = theme.borderHi }, T_FAST)
+    end)
+    btn.MouseLeave:Connect(function()
+        if rebinding then return end
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
+    end)
 
     local function stopRebind()
         rebinding = false
@@ -209,6 +298,8 @@ local function buildKeybindControl(theme, parent, initialKey, position, size, on
         keyStr = newKey or "None"
         btn.Text = keybindLabel(keyStr)
         btn.TextColor3 = theme.accent
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
         if fireCallback and onKeyChanged then
             task.spawn(onKeyChanged, keyStr)
         end
@@ -219,6 +310,8 @@ local function buildKeybindControl(theme, parent, initialKey, position, size, on
         rebinding = true
         rebindOpened = tick()
         btn.Text = "..."
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+        tween(btnStroke, { Color = theme.danger }, T_FAST)
         btn.TextColor3 = theme.danger
 
         table.insert(rebindConns, UIS.InputBegan:Connect(function(input, gpe)
@@ -275,7 +368,7 @@ function Section:CreateToggle(cfg)
     }
 
     local row = Create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 24),
+        Size = UDim2.new(1, 0, 0, 26),
         BackgroundTransparency = 1,
         AutoButtonColor = false,
         Text = "",
@@ -283,35 +376,43 @@ function Section:CreateToggle(cfg)
         Parent = self.container,
     })
 
-    local box = Create("Frame", {
-        Size = UDim2.fromOffset(14, 14),
-        Position = UDim2.new(0, 2, 0.5, -7),
+    -- Pill-style switch: a rounded track whose colour tweens between
+    -- surface (off) and accent (on), with a knob that slides across and
+    -- overshoots slightly (Back easing) for a tactile feel. Replaces the
+    -- old flat checkbox.
+    local TRACK_W, TRACK_H, KNOB = 34, 18, 12
+    local track = Create("Frame", {
+        Size = UDim2.fromOffset(TRACK_W, TRACK_H),
+        Position = UDim2.new(0, 2, 0.5, -TRACK_H / 2),
         BackgroundColor3 = state and theme.accent or theme.surface,
         BorderSizePixel = 0,
         Parent = row,
     })
-    corner(box, 3)
-    stroke(box, theme.border, 1)
+    corner(track, TRACK_H / 2)
+    local trackStroke = stroke(track, state and theme.accent or theme.border, 1)
 
-    local check = Create("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "✓",
-        TextColor3 = Color3.new(1, 1, 1),
-        Font = FONT_BOLD,
-        TextSize = 11,
-        Visible = state,
-        Parent = box,
+    -- Tinted glow behind the track, faded in only while the toggle is on.
+    local glow = shadow(track, 10, state and 0.4 or 1, theme.accentGlow)
+
+    local knobOffOff = 3                          -- knob x when off
+    local knobOnOff  = TRACK_W - KNOB - 3         -- knob x when on
+    local knob = Create("Frame", {
+        Size = UDim2.fromOffset(KNOB, KNOB),
+        Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+        Parent = track,
     })
+    corner(knob, KNOB / 2)
 
     local label = Create("TextLabel", {
-        Size = UDim2.new(1, -26, 1, 0),
-        Position = UDim2.new(0, 26, 0, 0),
+        Size = UDim2.new(1, -46, 1, 0),
+        Position = UDim2.new(0, 46, 0, 0),
         BackgroundTransparency = 1,
         Text = cfg.Name or "Toggle",
-        TextColor3 = theme.text,
+        TextColor3 = state and theme.text or theme.textDim,
         Font = FONT,
-        TextSize = 12,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = row,
     })
@@ -320,8 +421,13 @@ function Section:CreateToggle(cfg)
         v = not not v
         if v == state then return end
         state = v
-        box.BackgroundColor3 = state and theme.accent or theme.surface
-        check.Visible = state
+        tween(track, { BackgroundColor3 = state and theme.accent or theme.surface }, T_NORMAL)
+        tween(trackStroke, { Color = state and theme.accent or theme.border }, T_NORMAL)
+        tween(glow, { ImageTransparency = state and 0.4 or 1 }, T_NORMAL)
+        tween(label, { TextColor3 = state and theme.text or theme.textDim }, T_NORMAL)
+        tween(knob,
+            { Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2) },
+            T_NORMAL, SPRING)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, state)
         end
@@ -354,7 +460,7 @@ function Section:CreateToggle(cfg)
         end
         kbCfg = kbCfg or {}
         -- Shrink the label so it doesn't overlap the button
-        label.Size = UDim2.new(1, -26 - 64, 1, 0)
+        label.Size = UDim2.new(1, -46 - 64, 1, 0)
         kbCtrl = buildKeybindControl(
             theme, row,
             kbCfg.CurrentKeybind or "None",
@@ -476,10 +582,11 @@ function Section:CreateSlider(cfg)
     })
 
     -- Track (background) and fill (foreground). The fill is a child of the
-    -- track, sized 0..1 scale proportional to (value-min)/(max-min).
+    -- track, sized 0..1 scale proportional to (value-min)/(max-min). A round
+    -- thumb rides the leading edge of the fill, with a soft accent glow.
     local track = Create("Frame", {
         Size = UDim2.new(1, -4, 0, 6),
-        Position = UDim2.new(0, 2, 0, 22),
+        Position = UDim2.new(0, 2, 0, 24),
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
         Active = true, -- required for InputBegan to fire on the track
@@ -494,6 +601,20 @@ function Section:CreateSlider(cfg)
         Parent = track,
     })
     corner(fill, 3)
+    sheen(fill, 0.18)
+
+    local thumb = Create("Frame", {
+        Size = UDim2.fromOffset(12, 12),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = fill,
+    })
+    corner(thumb, 6)
+    stroke(thumb, theme.accent, 2)
+    shadow(thumb, 8, 0.45, theme.accentGlow)
 
     -- Formats a value for display. Integer step -> integer; sub-integer
     -- step -> two decimal places (enough precision for 0.01 increments
@@ -505,7 +626,7 @@ function Section:CreateSlider(cfg)
         return string.format("%.2f%s", v, suffix)
     end
 
-    local function setValue(v, fireCallback)
+    local function setValue(v, fireCallback, animate)
         v = math.clamp(v, minVal, maxVal)
         -- Snap to the nearest increment.
         if step > 0 then
@@ -515,7 +636,11 @@ function Section:CreateSlider(cfg)
         if v == value and valLbl.Text ~= "" then return end
         value = v
         local pct = (maxVal > minVal) and ((v - minVal) / (maxVal - minVal)) or 0
-        fill.Size = UDim2.new(pct, 0, 1, 0)
+        if animate then
+            tween(fill, { Size = UDim2.new(pct, 0, 1, 0) }, T_NORMAL)
+        else
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+        end
         valLbl.Text = formatValue(v)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, v)
@@ -567,9 +692,17 @@ function Section:CreateSlider(cfg)
         releaseConn:Disconnect()
     end)
 
+    -- Thumb grows on hover for a touch of tactility.
+    track.MouseEnter:Connect(function()
+        tween(thumb, { Size = UDim2.fromOffset(15, 15) }, T_FAST)
+    end)
+    track.MouseLeave:Connect(function()
+        if not dragging then tween(thumb, { Size = UDim2.fromOffset(12, 12) }, T_FAST) end
+    end)
+
     function handle:Get() return value end
-    function handle:Set(v) setValue(v, true) end
-    function handle:SetSilent(v) setValue(v, false) end
+    function handle:Set(v) setValue(v, true, true) end
+    function handle:SetSilent(v) setValue(v, false, true) end
 
     return handle
 end
@@ -616,24 +749,34 @@ function Section:CreateDropdown(cfg)
     })
 
     local btn = Create("TextButton", {
-        Size = UDim2.new(1, -4, 0, 20),
+        Size = UDim2.new(1, -4, 0, 22),
         Position = UDim2.new(0, 2, 0, 16),
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
         Text = " " .. tostring(current) .. "   ▼",
         TextColor3 = theme.text,
         Font = FONT,
-        TextSize = 11,
+        TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         AutoButtonColor = false,
         Parent = row,
     })
-    corner(btn, 4)
-    stroke(btn, theme.border, 1)
+    corner(btn, 5)
+    local btnStroke = stroke(btn, theme.border, 1)
 
     local popupOpen = false
     local popupBackdrop -- created on open, destroyed on close
     local popupFrame
+
+    btn.MouseEnter:Connect(function()
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+        tween(btnStroke, { Color = theme.borderHi }, T_FAST)
+    end)
+    btn.MouseLeave:Connect(function()
+        if popupOpen then return end
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
+    end)
 
     local function closePopup()
         popupOpen = false
@@ -677,14 +820,22 @@ function Section:CreateDropdown(cfg)
         local totalH = math.min(#options, 8) * optHeight + 4
         popupFrame = Create("Frame", {
             Size = UDim2.fromOffset(btn.AbsoluteSize.X, totalH),
-            Position = UDim2.fromOffset(btn.AbsolutePosition.X, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y + 2),
+            Position = UDim2.fromOffset(btn.AbsolutePosition.X, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y + 4),
             BackgroundColor3 = theme.bgAlt,
             BorderSizePixel = 0,
             ZIndex = 51,
             Parent = popupBackdrop,
         })
-        corner(popupFrame, 4)
-        stroke(popupFrame, theme.border, 1)
+        corner(popupFrame, 6)
+        stroke(popupFrame, theme.borderHi, 1)
+        shadow(popupFrame, 22, 0.5)
+
+        -- Entrance: expand from a sliver + fade in, with a UIScale so the
+        -- corner stays anchored to the button rather than scaling centrally.
+        local uiscale = Create("UIScale", { Scale = 0.96, Parent = popupFrame })
+        popupFrame.Size = UDim2.fromOffset(btn.AbsoluteSize.X, 0)
+        tween(popupFrame, { Size = UDim2.fromOffset(btn.AbsoluteSize.X, totalH) }, T_NORMAL)
+        tween(uiscale, { Scale = 1 }, T_NORMAL, SPRING)
 
         local scroll = Create("ScrollingFrame", {
             Size = UDim2.new(1, -4, 1, -4),
@@ -719,7 +870,14 @@ function Section:CreateDropdown(cfg)
                 ZIndex = 53,
                 Parent = scroll,
             })
-            corner(optBtn, 3)
+            corner(optBtn, 4)
+            local isCur = (opt == current)
+            optBtn.MouseEnter:Connect(function()
+                if not isCur then tween(optBtn, { BackgroundColor3 = theme.surfaceHi }, T_FAST) end
+            end)
+            optBtn.MouseLeave:Connect(function()
+                if not isCur then tween(optBtn, { BackgroundColor3 = theme.surface }, T_FAST) end
+            end)
             optBtn.MouseButton1Click:Connect(function()
                 setOption(opt, true)
                 closePopup()
@@ -896,8 +1054,11 @@ function Section:CreateColorPicker(cfg)
             ZIndex = 51,
             Parent = popupBackdrop,
         })
-        corner(popupFrame, 4)
-        stroke(popupFrame, theme.border, 1)
+        corner(popupFrame, 6)
+        stroke(popupFrame, theme.borderHi, 1)
+        shadow(popupFrame, 24, 0.5)
+        local cpScale = Create("UIScale", { Scale = 0.94, Parent = popupFrame })
+        tween(cpScale, { Scale = 1 }, T_NORMAL, SPRING)
 
         -- Saturation/Value box. The base frame is the pure hue; a
         -- horizontal white→transparent gradient gives the saturation
@@ -1091,26 +1252,42 @@ function Section:CreateButton(cfg)
     local handle = { Type = "Button", Name = cfg.Name or "Button" }
 
     local btn = Create("TextButton", {
-        Size = UDim2.new(1, -4, 0, 26),
+        Size = UDim2.new(1, -4, 0, 28),
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
         Text = cfg.Name or "Button",
         TextColor3 = theme.text,
         Font = FONT_SEMI,
-        TextSize = 12,
+        TextSize = 13,
         AutoButtonColor = false,
         LayoutOrder = self:_next(),
         Parent = self.container,
     })
-    corner(btn, 4)
-    stroke(btn, theme.border, 1)
+    corner(btn, 6)
+    local btnStroke = stroke(btn, theme.border, 1)
+    sheen(btn, 0.05)
 
     local armedForConfirm = false
     local armedUntil = 0
 
-    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = theme.surfaceHi end)
+    btn.MouseEnter:Connect(function()
+        if armedForConfirm then return end
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+        tween(btnStroke, { Color = theme.borderHi }, T_FAST)
+    end)
     btn.MouseLeave:Connect(function()
-        if not armedForConfirm then btn.BackgroundColor3 = theme.surface end
+        if armedForConfirm then return end
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
+    end)
+    -- Quick press feedback: a small dip then release.
+    btn.MouseButton1Down:Connect(function()
+        if armedForConfirm then return end
+        tween(btn, { BackgroundColor3 = theme.surface }, 0.06)
+    end)
+    btn.MouseButton1Up:Connect(function()
+        if armedForConfirm then return end
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
     end)
 
     btn.MouseButton1Click:Connect(function()
@@ -1118,19 +1295,22 @@ function Section:CreateButton(cfg)
             if armedForConfirm and tick() < armedUntil then
                 armedForConfirm = false
                 btn.Text = cfg.Name or "Button"
-                btn.BackgroundColor3 = theme.surface
+                tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+                tween(btnStroke, { Color = theme.border }, T_FAST)
                 if cfg.Callback then task.spawn(cfg.Callback) end
                 return
             end
             armedForConfirm = true
             armedUntil = tick() + 0.5
             btn.Text = "Click again to confirm"
-            btn.BackgroundColor3 = theme.danger
+            tween(btn, { BackgroundColor3 = theme.danger }, T_FAST)
+            tween(btnStroke, { Color = theme.danger }, T_FAST)
             task.delay(0.5, function()
                 if tick() >= armedUntil then
                     armedForConfirm = false
                     btn.Text = cfg.Name or "Button"
-                    btn.BackgroundColor3 = theme.surface
+                    tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+                    tween(btnStroke, { Color = theme.border }, T_FAST)
                 end
             end)
             return
@@ -1329,6 +1509,141 @@ function Section:CreateInput(cfg)
     return handle
 end
 
+-- =========================================================================
+-- Divider — a thin themed separator, optionally with a centered label.
+-- =========================================================================
+function Section:CreateDivider(cfg)
+    cfg = cfg or {}
+    local theme = self.tab.window.theme
+    local text  = type(cfg) == "string" and cfg or cfg.Text
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, text and 18 or 10),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    local function makeLine(xScale, xOff, wScale, wOff)
+        local line = Create("Frame", {
+            Size = UDim2.new(wScale, wOff, 0, 1),
+            Position = UDim2.new(xScale, xOff, 0.5, 0),
+            BackgroundColor3 = theme.border,
+            BorderSizePixel = 0,
+            Parent = row,
+        })
+        Create("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.6),
+                NumberSequenceKeypoint.new(0.5, 0),
+                NumberSequenceKeypoint.new(1, 0.6),
+            }),
+            Parent = line,
+        })
+        return line
+    end
+
+    if text then
+        Create("TextLabel", {
+            Size = UDim2.new(0, 0, 1, 0),
+            AutomaticSize = Enum.AutomaticSize.X,
+            Position = UDim2.new(0.5, 0, 0, 0),
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            Text = " " .. tostring(text) .. " ",
+            TextColor3 = theme.textDim,
+            Font = FONT_SEMI,
+            TextSize = 11,
+            Parent = row,
+        })
+        makeLine(0, 0, 0.5, -28)
+        makeLine(0.5, 28, 0.5, -28)
+    else
+        makeLine(0, 0, 1, 0)
+    end
+
+    local handle = { Type = "Divider" }
+    function handle:Destroy() row:Destroy() end
+    return handle
+end
+
+-- =========================================================================
+-- Image — an in-panel picture row (logo, banner, preview).
+-- =========================================================================
+-- cfg.Image (rbxassetid), cfg.Height (default 80), cfg.Rounding,
+-- cfg.ScaleType, cfg.Color (ImageColor3 tint). Returns a handle with
+-- :SetImage / :SetColor / :Destroy.
+function Section:CreateImage(cfg)
+    cfg = cfg or {}
+    local theme = self.tab.window.theme
+
+    local frame = Create("ImageLabel", {
+        Size = UDim2.new(1, -4, 0, cfg.Height or 80),
+        BackgroundColor3 = theme.surface,
+        BackgroundTransparency = cfg.Background == false and 1 or 0,
+        BorderSizePixel = 0,
+        Image = tostring(cfg.Image or ""),
+        ImageColor3 = (typeof(cfg.Color) == "Color3") and cfg.Color or Color3.new(1, 1, 1),
+        ScaleType = cfg.ScaleType or Enum.ScaleType.Fit,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+    corner(frame, cfg.Rounding or 6)
+    if cfg.Background ~= false then stroke(frame, theme.border, 1) end
+
+    local handle = { Type = "Image" }
+    function handle:SetImage(i) frame.Image = tostring(i) end
+    function handle:SetColor(c) if typeof(c) == "Color3" then frame.ImageColor3 = c end end
+    function handle:GetInstance() return frame end
+    function handle:Destroy() frame:Destroy() end
+    return handle
+end
+
+-- =========================================================================
+-- Custom — escape hatch for fully bespoke widgets.
+-- =========================================================================
+-- Creates a themed container row and hands it to your builder along with the
+-- window theme and the styling Util kit, so a script can render anything it
+-- likes while still matching the rest of the UI:
+--
+--     Section:CreateCustom({ Height = 60 }, function(box, theme, U)
+--         local b = U.Create("TextButton", { Size = UDim2.fromScale(1,1),
+--             BackgroundColor3 = theme.surface, Text = "Hi", Parent = box })
+--         U.corner(b, 6) ; U.stroke(b, theme.accent, 1)
+--     end)
+--
+-- Pass Height for a fixed-height row, or Auto = true to size to contents.
+-- Returns a handle with :GetInstance() (the container) and :Destroy().
+function Section:CreateCustom(cfg, builder)
+    if type(cfg) == "function" then builder, cfg = cfg, {} end
+    cfg = cfg or {}
+    local theme = self.tab.window.theme
+
+    local box = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, cfg.Auto and 0 or (cfg.Height or 40)),
+        AutomaticSize = cfg.Auto and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
+        BackgroundColor3 = theme.surface,
+        BackgroundTransparency = cfg.Background == false and 1 or 0,
+        BorderSizePixel = 0,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+    if cfg.Background ~= false then
+        corner(box, cfg.Rounding or 6)
+        stroke(box, theme.border, 1)
+    end
+
+    if type(builder) == "function" then
+        local ok, err = pcall(builder, box, theme, OvertimeUI.Util)
+        if not ok then warn("[OvertimeUI] CreateCustom builder error: " .. tostring(err)) end
+    end
+
+    local handle = { Type = "Custom" }
+    function handle:GetInstance() return box end
+    function handle:Destroy() box:Destroy() end
+    return handle
+end
+
 -- LayoutOrder counter so items show up in the order they were added even
 -- though they share a parent UIListLayout.
 function Section:_next()
@@ -1361,16 +1676,26 @@ function Tab:CreateSection(name)
     end
 
     local header = Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 16),
+        Size = UDim2.new(1, -10, 0, 16),
+        Position = UDim2.new(0, 10, 0, 0),
         BackgroundTransparency = 1,
         Text = string.upper(name or "Section"),
         TextColor3 = theme.accent,
         Font = FONT_BOLD,
-        TextSize = 10,
+        TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         LayoutOrder = sectionOrder * 1000 + 1,
         Parent = self.page,
     })
+    -- Small accent tick sitting to the left of the section label.
+    local tick = Create("Frame", {
+        Size = UDim2.fromOffset(3, 11),
+        Position = UDim2.new(0, 1, 0.5, -5),
+        BackgroundColor3 = theme.accent,
+        BorderSizePixel = 0,
+        Parent = header,
+    })
+    corner(tick, 2)
 
     -- Container for the section's controls. Uses its own UIListLayout so
     -- the controls stack cleanly under the header.
@@ -1421,10 +1746,11 @@ function Window:CreateTab(name)
 
     -- Tab strip button
     local button = Create("TextButton", {
-        Size = UDim2.new(1, -8, 0, 28),
+        Size = UDim2.new(1, -8, 0, 30),
         BackgroundColor3 = theme.bgAlt,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Text = "  " .. name,
+        Text = "   " .. name,
         TextColor3 = theme.textDim,
         Font = FONT_SEMI,
         TextSize = 12,
@@ -1433,8 +1759,30 @@ function Window:CreateTab(name)
         LayoutOrder = #self.tabs + 1,
         Parent = self._tabStrip,
     })
-    corner(button, 5)
+    corner(button, 6)
     tab.button = button
+
+    -- Left-edge accent indicator. Collapsed to zero height when the tab is
+    -- inactive; springs to full height when selected.
+    local indicator = Create("Frame", {
+        Size = UDim2.new(0, 3, 0, 0),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = theme.accent,
+        BorderSizePixel = 0,
+        Parent = button,
+    })
+    corner(indicator, 2)
+    tab.indicator = indicator
+
+    button.MouseEnter:Connect(function()
+        if self.activeTab == tab then return end
+        tween(button, { BackgroundTransparency = 0.4, TextColor3 = theme.text }, T_FAST)
+    end)
+    button.MouseLeave:Connect(function()
+        if self.activeTab == tab then return end
+        tween(button, { BackgroundTransparency = 1, TextColor3 = theme.textDim }, T_FAST)
+    end)
 
     -- Tab body page (ScrollingFrame so overflowing content can scroll)
     local page = Create("ScrollingFrame", {
@@ -1478,8 +1826,16 @@ function Window:SwitchTab(tab)
     for _, t in ipairs(self.tabs) do
         local active = (t == tab)
         t.page.Visible = active
-        t.button.BackgroundColor3 = active and theme.surface or theme.bgAlt
-        t.button.TextColor3 = active and theme.accent or theme.textDim
+        tween(t.button, {
+            BackgroundTransparency = active and 0 or 1,
+            BackgroundColor3 = theme.surface,
+            TextColor3 = active and theme.accent or theme.textDim,
+        }, T_NORMAL)
+        if t.indicator then
+            tween(t.indicator,
+                { Size = UDim2.new(0, 3, 0, active and 16 or 0) },
+                T_NORMAL, active and SPRING or EASE)
+        end
     end
     self.activeTab = tab
 end
@@ -1490,9 +1846,91 @@ function Window:OnClose(cb)
     end
 end
 
+-- =====================================================================
+-- Visibility — Show / Hide / Toggle, animated to match the entrance.
+-- =====================================================================
+-- SetVisible(true)  scales the panel up from 0.92 + fades it in.
+-- SetVisible(false) reverses it, then flips gui.Enabled off so a hidden
+-- menu costs nothing to render and can't be clicked through.
+function Window:SetVisible(state)
+    if self._destroyed then return end
+    state = not not state
+    if state == self._visible then return end
+    self._visible = state
+
+    if state then
+        self.gui.Enabled = true
+        if self._freeMouse then OvertimeUI:SetMouseFree(true) end
+        tween(self._scale, { Scale = 1 }, T_NORMAL, SPRING)
+        tween(self.panel, { BackgroundTransparency = 0 }, T_NORMAL)
+    else
+        if self._freeMouse then OvertimeUI:SetMouseFree(false) end
+        tween(self._scale, { Scale = 0.92 }, T_FAST)
+        local tw = tween(self.panel, { BackgroundTransparency = 1 }, T_FAST)
+        -- Disable the ScreenGui only once the fade-out has finished, and
+        -- only if we haven't been re-shown in the meantime.
+        tw.Completed:Connect(function()
+            if not self._visible and not self._destroyed then
+                self.gui.Enabled = false
+            end
+        end)
+    end
+end
+
+function Window:Show()   self:SetVisible(true)  end
+function Window:Hide()   self:SetVisible(false) end
+function Window:Toggle() self:SetVisible(not self._visible) end
+function Window:IsVisible() return self._visible end
+
+-- =====================================================================
+-- Toggle key — bind a keyboard key (or LMB/RMB/MMB) to show/hide the menu.
+-- =====================================================================
+-- Accepts the same string form as the keybind controls ("RightShift",
+-- "Insert", "MouseButton3", ...) or "None"/nil to clear. Re-calling it
+-- replaces the previous binding. The listener is torn down on Destroy.
+function Window:SetToggleKey(keyStr)
+    if self._toggleConn then
+        self._toggleConn:Disconnect()
+        self._toggleConn = nil
+    end
+    self._toggleKey = keyStr
+
+    -- Register a one-time cleanup that always disconnects whatever the
+    -- current binding is, so re-binding never leaks connections.
+    if not self._toggleCleanupRegistered then
+        self._toggleCleanupRegistered = true
+        table.insert(self._cleanup, function()
+            if self._toggleConn then
+                self._toggleConn:Disconnect()
+                self._toggleConn = nil
+            end
+        end)
+    end
+
+    if not keyStr or keyStr == "" or keyStr == "None" or keyStr == "Unknown" then
+        return
+    end
+
+    self._toggleConn = UIS.InputBegan:Connect(function(input, gameProcessed)
+        -- gameProcessed is true when the input was already consumed by
+        -- the engine (e.g. the user is typing in a TextBox) — ignore it
+        -- so the toggle key doesn't fire mid-edit.
+        if gameProcessed then return end
+        local pressed = inputObjectToKeybind(input)
+        if pressed and pressed == self._toggleKey then
+            self:Toggle()
+        end
+    end)
+end
+
+function Window:GetToggleKey() return self._toggleKey or "None" end
+
 function Window:Destroy()
     if self._destroyed then return end
     self._destroyed = true
+    if self._freeMouse then
+        pcall(function() OvertimeUI:SetMouseFree(false) end)
+    end
     for _, cb in ipairs(self.onCloseCallbacks) do
         local ok, err = pcall(cb)
         if not ok then warn("[OvertimeUI] OnClose callback error: " .. tostring(err)) end
@@ -1529,12 +1967,25 @@ function OvertimeUI:CreateWindow(cfg)
     local self = setmetatable({}, Window)
     self.name              = name
     self.theme             = defaultTheme()
+    -- Full palette override: pass any subset of theme keys (bg, surface,
+    -- border, accent, text, ...) and they're merged over the defaults, so
+    -- each script can give its menu a unique look. Accent stays as a
+    -- dedicated shortcut.
+    if type(cfg.Theme) == "table" then
+        for k, v in pairs(cfg.Theme) do
+            if typeof(v) == "Color3" then self.theme[k] = v end
+        end
+    end
     if typeof(cfg.Accent) == "Color3" then self.theme.accent = cfg.Accent end
     self.tabs              = {}
     self.activeTab         = nil
     self.onCloseCallbacks  = {}
     self._cleanup          = {}
     self._destroyed        = false
+    -- When true, showing the menu frees the cursor and hiding it releases
+    -- the cursor back to the game (see :SetVisible / :SetMouseFree).
+    self._freeMouse        = cfg.FreeMouse == true
+    if self._freeMouse then OvertimeUI:SetMouseFree(true) end
 
     -- Marker — owned by the library. The script never needs to touch it.
     local marker = Instance.new("BoolValue")
@@ -1568,11 +2019,37 @@ function OvertimeUI:CreateWindow(cfg)
         BackgroundColor3 = self.theme.bg,
         BorderSizePixel = 0,
         Active = true,
+        ZIndex = 2,
         Parent = gui,
     })
-    corner(panel, 10)
+    corner(panel, 12)
     stroke(panel, self.theme.border, 1)
+    sheen(panel, 0.10)
     self.panel = panel
+
+    -- Drop shadow lives in a sibling holder *behind* the panel (a child of
+    -- the panel would render in front of its fill). The holder mirrors the
+    -- panel's transform; drag/minimize update it alongside the panel.
+    local shadowHolder = Create("Frame", {
+        Name = "PanelShadow",
+        Size = size,
+        Position = pos,
+        BackgroundTransparency = 1,
+        ZIndex = 1,
+        Parent = gui,
+    })
+    shadow(shadowHolder, 34, 0.45)
+    self._shadowHolder = shadowHolder
+
+    -- Entrance: gentle scale-up + fade so the window arrives instead of
+    -- popping. UIScale keeps the centre anchored and is reused by
+    -- Show/Hide so visibility toggles animate the same way.
+    local entrance = Create("UIScale", { Scale = 0.92, Parent = panel })
+    self._scale = entrance
+    self._visible = true
+    panel.BackgroundTransparency = 1
+    tween(entrance, { Scale = 1 }, T_SLOW, SPRING)
+    tween(panel, { BackgroundTransparency = 0 }, T_SLOW)
 
     -- Title bar. Active = true so InputBegan fires on this Frame when
     -- the user clicks it (Frames with Active = false pass clicks through).
@@ -1585,54 +2062,92 @@ function OvertimeUI:CreateWindow(cfg)
     })
 
     local accentStripe = Create("Frame", {
-        Size = UDim2.fromOffset(3, 16),
-        Position = UDim2.new(0, 10, 0.5, -8),
+        Size = UDim2.fromOffset(4, 18),
+        Position = UDim2.new(0, 12, 0.5, -9),
         BackgroundColor3 = self.theme.accent,
         BorderSizePixel = 0,
+        ZIndex = 3,
         Parent = titleBar,
     })
     corner(accentStripe, 2)
+    -- Soft halo behind the bar (sits lower so it reads as a glow, not a box).
+    local stripeGlow = shadow(accentStripe, 10, 0.25, self.theme.accentGlow)
+    stripeGlow.ZIndex = 2
 
     Create("TextLabel", {
-        Size = UDim2.new(1, -100, 1, 0),
-        Position = UDim2.new(0, 20, 0, 0),
+        Size = UDim2.new(1, -120, 0, cfg.SubTitle and 16 or 36),
+        Position = UDim2.new(0, 24, 0, cfg.SubTitle and 4 or 0),
         BackgroundTransparency = 1,
         Text = name,
         TextColor3 = self.theme.text,
         Font = FONT_BOLD,
-        TextSize = 14,
+        TextSize = 15,
         TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = cfg.SubTitle and Enum.TextYAlignment.Bottom or Enum.TextYAlignment.Center,
         Parent = titleBar,
     })
+    if cfg.SubTitle then
+        Create("TextLabel", {
+            Size = UDim2.new(1, -120, 0, 12),
+            Position = UDim2.new(0, 24, 0, 20),
+            BackgroundTransparency = 1,
+            Text = tostring(cfg.SubTitle),
+            TextColor3 = self.theme.textDim,
+            Font = FONT,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = titleBar,
+        })
+    end
 
     local function makeIconBtn(icon, color, xOffset)
         local b = Create("TextButton", {
-            Size = UDim2.fromOffset(22, 22),
-            Position = UDim2.new(1, xOffset, 0, 7),
+            Size = UDim2.fromOffset(24, 24),
+            Position = UDim2.new(1, xOffset, 0, 6),
             BackgroundColor3 = self.theme.surface,
+            BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Text = icon,
             TextColor3 = color,
             Font = FONT_BOLD,
-            TextSize = 14,
+            TextSize = 15,
             AutoButtonColor = false,
+            ZIndex = 3,
             Parent = titleBar,
         })
-        corner(b, 4)
+        corner(b, 6)
+        b.MouseEnter:Connect(function()
+            tween(b, { BackgroundTransparency = 0, BackgroundColor3 = color }, T_FAST)
+            tween(b, { TextColor3 = self.theme.bg }, T_FAST)
+        end)
+        b.MouseLeave:Connect(function()
+            tween(b, { BackgroundTransparency = 1 }, T_FAST)
+            tween(b, { TextColor3 = color }, T_FAST)
+        end)
         return b
     end
-    local closeBtn = makeIconBtn("×", self.theme.danger, -30)
-    local minBtn   = makeIconBtn("–", self.theme.text,   -56)
+    local closeBtn = makeIconBtn("×", self.theme.danger, -32)
+    local minBtn   = makeIconBtn("–", self.theme.textDim, -60)
 
     closeBtn.MouseButton1Click:Connect(function() self:Destroy() end)
 
-    -- Title separator
-    Create("Frame", {
-        Size = UDim2.new(1, -20, 0, 1),
-        Position = UDim2.new(0, 10, 0, 36),
-        BackgroundColor3 = self.theme.border,
+    -- Title separator — a 1px line that fades toward both ends.
+    local sep = Create("Frame", {
+        Size = UDim2.new(1, -24, 0, 1),
+        Position = UDim2.new(0, 12, 0, 37),
+        BackgroundColor3 = self.theme.borderHi,
         BorderSizePixel = 0,
+        ZIndex = 3,
         Parent = panel,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.15, 0),
+            NumberSequenceKeypoint.new(0.85, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Parent = sep,
     })
 
     -- Content container: horizontal split (tab strip | tab body)
@@ -1682,9 +2197,16 @@ function OvertimeUI:CreateWindow(cfg)
     local fullSize = size
     minBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
-        content.Visible = not minimized
-        panel.Size = minimized and UDim2.fromOffset(fullSize.X.Offset, 36) or fullSize
+        local target = minimized and UDim2.fromOffset(fullSize.X.Offset, 36) or fullSize
+        if minimized then content.Visible = false end
+        tween(panel, { Size = target }, T_NORMAL)
+        tween(shadowHolder, { Size = target }, T_NORMAL)
         minBtn.Text = minimized and "+" or "–"
+        if not minimized then
+            task.delay(T_NORMAL * 0.5, function()
+                if not minimized then content.Visible = true end
+            end)
+        end
     end)
 
     -- Drag handling. Roblox's legacy `Draggable = true` is deprecated and
@@ -1716,10 +2238,12 @@ function OvertimeUI:CreateWindow(cfg)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
                           or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - dragStart
-                panel.Position = UDim2.new(
+                local newPos = UDim2.new(
                     startPos.X.Scale, startPos.X.Offset + delta.X,
                     startPos.Y.Scale, startPos.Y.Offset + delta.Y
                 )
+                panel.Position = newPos
+                shadowHolder.Position = newPos
             end
         end)
         table.insert(self._cleanup, function()
@@ -1793,22 +2317,39 @@ function OvertimeUI:Notify(cfg)
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         Position = UDim2.new(1.2, 0, 0, 0),
-        BackgroundColor3 = theme.bg,
+        BackgroundColor3 = theme.bgAlt,
         BorderSizePixel = 0,
         LayoutOrder = notifyOrder,
         Parent = notifyStack,
     })
-    corner(toast, 8)
-    stroke(toast, theme.border, 1)
+    corner(toast, 10)
+    stroke(toast, theme.borderHi, 1)
+    sheen(toast, 0.08)
 
     local stripe = Create("Frame", {
         Size = UDim2.new(0, 3, 1, -14),
         Position = UDim2.new(0, 8, 0, 7),
         BackgroundColor3 = theme.accent,
         BorderSizePixel = 0,
+        ZIndex = 2,
         Parent = toast,
     })
     corner(stripe, 2)
+    local sGlow = shadow(stripe, 9, 0.3, theme.accent)
+    sGlow.ZIndex = 1
+
+    -- Countdown bar pinned to the bottom edge; shrinks to zero over the
+    -- toast's lifetime so the user can see how long it'll stay up.
+    local progress = Create("Frame", {
+        Size = UDim2.new(1, -16, 0, 2),
+        Position = UDim2.new(0, 8, 1, -5),
+        AnchorPoint = Vector2.new(0, 0),
+        BackgroundColor3 = theme.accent,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = toast,
+    })
+    corner(progress, 1)
 
     local contentBox = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 0),
@@ -1863,6 +2404,12 @@ function OvertimeUI:Notify(cfg)
 
     TweenService:Create(toast, slideInInfo, { Position = UDim2.new(0, 0, 0, 0) }):Play()
 
+    -- Linear countdown bar over the full duration.
+    TweenService:Create(progress,
+        TweenInfo.new(duration, Enum.EasingStyle.Linear),
+        { Size = UDim2.new(0, 0, 0, 2) }
+    ):Play()
+
     task.delay(duration, function()
         local outTween = TweenService:Create(toast, slideOutInfo, {
             Position = UDim2.new(1.2, 0, 0, 0),
@@ -1875,131 +2422,490 @@ function OvertimeUI:Notify(cfg)
 end
 
 -- =========================================================================
--- FOV circle — screen overlay for aimbot field-of-view visualization
+-- Mouse freedom — force the cursor unlocked and visible.
 -- =========================================================================
--- UI:CreateFovCircle{
---     Radius           = 100,                           -- pixels (half-width)
---     Color            = Color3.fromRGB(255, 255, 255), -- outline + fill
---     Thickness        = 1,                             -- outline thickness
---     Filled           = false,                         -- fill interior
---     FillTransparency = 0.8,                           -- 0=opaque 1=invisible
---     Visible          = true,
--- }
---
--- Returns a handle with SetRadius / SetColor / SetThickness / SetFilled /
--- SetFillTransparency / SetVisible plus matching getters, and :Destroy.
--- All setters silently ignore wrong-typed input (Set(nil) / Set("x") etc.)
--- so scripts can bind them directly to slider/toggle callbacks without a
--- guard wrapper; calls after :Destroy are no-ops.
---
--- The circle is a single Frame with UICorner = UDim.new(1, 0) for the
--- rounded shape and a UIStroke for the outline — no Drawing library, no
--- image assets, works anywhere a ScreenGui does. All FOV circles share a
--- lazily-created ScreenGui at DisplayOrder = -1 so they always render
--- behind window UIs. Anchored to the center of the game viewport
--- (IgnoreGuiInset = false) so the circle sits on the crosshair, not on
--- the absolute screen center (which the topbar would offset).
+-- Many games re-lock the mouse to screen centre every frame (shift-lock,
+-- first person, custom camera scripts). A one-shot
+-- `UIS.MouseBehavior = Default` gets stomped on the next frame, so
+-- SetMouseFree(true) re-asserts it on Heartbeat for as long as it's on.
+-- SetMouseFree(false) stops asserting and hands control back to the game.
+-- The state is process-global (the mouse is a shared resource), so the
+-- typical pattern is to free it when your menu opens and release it when
+-- the menu hides — see :SetVisible. Idempotent; safe to call repeatedly.
 
-local fovGui
-
-local function ensureFovContainer()
-    if fovGui and fovGui.Parent then return end
-    fovGui = Create("ScreenGui", {
-        Name = "OvertimeUI_FovCircles",
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        DisplayOrder = -1,
-        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
-    })
+local mouseFreeConn
+function OvertimeUI:SetMouseFree(state)
+    state = state ~= false  -- nil/true -> free; false -> release
+    if state then
+        if mouseFreeConn then return end
+        mouseFreeConn = RunService.Heartbeat:Connect(function()
+            if UIS.MouseBehavior ~= Enum.MouseBehavior.Default then
+                UIS.MouseBehavior = Enum.MouseBehavior.Default
+            end
+            if not UIS.MouseIconEnabled then
+                UIS.MouseIconEnabled = true
+            end
+        end)
+    elseif mouseFreeConn then
+        mouseFreeConn:Disconnect()
+        mouseFreeConn = nil
+    end
 end
 
-function OvertimeUI:CreateFovCircle(cfg)
-    cfg = cfg or {}
-    ensureFovContainer()
+function OvertimeUI:IsMouseFree()
+    return mouseFreeConn ~= nil
+end
 
-    local radius    = (type(cfg.Radius)    == "number") and math.max(cfg.Radius, 0) or 100
-    local color     = (typeof(cfg.Color)   == "Color3") and cfg.Color or Color3.fromRGB(255, 255, 255)
-    local thickness = (type(cfg.Thickness) == "number") and math.max(cfg.Thickness, 0) or 1
+-- =========================================================================
+-- Global key binding — run a callback on key press, independent of any
+-- control or window.
+-- =========================================================================
+-- Accepts the same string form as the keybind controls ("F2", "Insert",
+-- "MouseButton3", ...). Returns an unbind function; call it to remove the
+-- binding. Bindings are NOT auto-cleaned by a window's Destroy (they're
+-- standalone), so keep the returned function if the binding should be
+-- temporary. gameProcessed input (e.g. typing in a TextBox) is ignored.
+--
+--     local unbind = UI:BindKey("F", function() print("F pressed") end)
+--     ...
+--     unbind()  -- later, to remove it
+function OvertimeUI:BindKey(keyStr, callback)
+    assert(type(callback) == "function", "[OvertimeUI] BindKey requires a callback function")
+    if not keyStr or keyStr == "" or keyStr == "None" or keyStr == "Unknown" then
+        return function() end
+    end
+    local conn = UIS.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if inputObjectToKeybind(input) == keyStr then
+            task.spawn(callback)
+        end
+    end)
+    return function()
+        if conn then
+            conn:Disconnect()
+            conn = nil
+        end
+    end
+end
+
+-- =========================================================================
+-- Overlay drawing kit — generic on-screen shapes for ESP, FOV rings,
+-- crosshairs, tracers, watermarks, and freeform decoration.
+-- =========================================================================
+-- These are NOT tied to any window. Each shape is created on a shared,
+-- lazily-built ScreenGui (or a Parent you pass in) and returns a handle.
+-- Every handle supports a common set of setters/getters plus shape-specific
+-- ones, and a :Destroy. Setters ignore wrong-typed input and no-op after
+-- :Destroy, so they can be wired straight to slider/toggle/colorpicker
+-- callbacks without guard wrappers, and they return the handle so calls
+-- chain:
+--
+--     local ring = UI:CreateCircle{ Center = true, Radius = 120, Glow = true }
+--     fovSlider.Callback   = function(v) ring:SetRadius(v) end
+--     colorPicker.Callback = function(c) ring:SetColor(c) end
+--     espToggle.Callback   = function(on) ring:SetVisible(on) end
+--
+-- The shared overlay sits above the game world; call SetOverlayDisplayOrder
+-- to move it relative to your windows (negative = behind them, which is the
+-- old FOV-circle behaviour).
+
+local overlayGui
+local OVERLAY_ORDER = 10
+
+local function ensureOverlay()
+    if overlayGui and overlayGui.Parent then return overlayGui end
+    overlayGui = Create("ScreenGui", {
+        Name = "OvertimeUI_Overlay",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = OVERLAY_ORDER,
+        IgnoreGuiInset = true,
+        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
+    })
+    return overlayGui
+end
+
+function OvertimeUI:SetOverlayDisplayOrder(n)
+    if type(n) ~= "number" then return end
+    OVERLAY_ORDER = n
+    if overlayGui then overlayGui.DisplayOrder = n end
+end
+
+function OvertimeUI:GetOverlay()
+    return ensureOverlay()
+end
+
+-- Common handle plumbing shared by the shapes: visibility, colour, position,
+-- transparency, raw-instance access, destroy. `glowImg` is optional and is
+-- retinted alongside the colour when present.
+local function attachShapeCommon(handle, frame, glowImg)
+    local destroyed = false
+    handle.GetInstance = function() return frame end
+    handle._isDestroyed = function() return destroyed end
+    function handle:SetVisible(v) if not destroyed then frame.Visible = v ~= false end return self end
+    function handle:IsVisible() return (not destroyed) and frame.Visible end
+    function handle:SetPosition(p) if not destroyed and typeof(p) == "UDim2" then frame.Position = p end return self end
+    function handle:GetPosition() return frame and frame.Position end
+    function handle:SetColor(c)
+        if destroyed or typeof(c) ~= "Color3" then return self end
+        frame.BackgroundColor3 = c
+        local st = frame:FindFirstChildOfClass("UIStroke")
+        if st then st.Color = c end
+        if glowImg then glowImg.ImageColor3 = c end
+        return self
+    end
+    function handle:SetTransparency(t)
+        if not destroyed and type(t) == "number" then frame.BackgroundTransparency = math.clamp(t, 0, 1) end
+        return self
+    end
+    function handle:Destroy()
+        if destroyed then return end
+        destroyed = true
+        if frame then frame:Destroy() frame = nil end
+    end
+    return handle
+end
+
+local function shapeParent(cfg) return (typeof(cfg.Parent) == "Instance") and cfg.Parent or ensureOverlay() end
+local function shapeColor(cfg) return (typeof(cfg.Color) == "Color3") and cfg.Color or Color3.fromRGB(96, 165, 255) end
+
+-- Circle / ring. The generic replacement for the old FOV circle: pass
+-- Center = true to anchor it on the viewport crosshair, or Position for free
+-- placement. Filled controls the interior; Glow adds a soft halo.
+function OvertimeUI:CreateCircle(cfg)
+    cfg = cfg or {}
+    local color     = shapeColor(cfg)
+    local radius    = (type(cfg.Radius) == "number") and math.max(cfg.Radius, 0) or 60
+    local thickness = (type(cfg.Thickness) == "number") and math.max(cfg.Thickness, 0) or 2
     local filled    = cfg.Filled == true
     local fillTrans = (type(cfg.FillTransparency) == "number") and math.clamp(cfg.FillTransparency, 0, 1) or 0.8
-    local visible   = cfg.Visible ~= false  -- defaults to true
 
     local frame = Create("Frame", {
-        Name = "FovCircle",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Name = cfg.Name or "Circle",
+        AnchorPoint = (typeof(cfg.AnchorPoint) == "Vector2") and cfg.AnchorPoint or Vector2.new(0.5, 0.5),
+        Position = (typeof(cfg.Position) == "UDim2") and cfg.Position
+                   or (cfg.Center and UDim2.fromScale(0.5, 0.5) or UDim2.fromOffset(200, 200)),
         Size = UDim2.fromOffset(radius * 2, radius * 2),
         BackgroundColor3 = color,
         BackgroundTransparency = filled and fillTrans or 1,
         BorderSizePixel = 0,
-        Visible = visible,
-        Parent = fovGui,
+        Visible = cfg.Visible ~= false,
+        ZIndex = cfg.ZIndex or 1,
+        Parent = shapeParent(cfg),
     })
     Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = frame })
-    local strokeInst = Create("UIStroke", {
-        Color = color,
-        Thickness = thickness,
-        Parent = frame,
-    })
+    local strokeInst = Create("UIStroke", { Color = color, Thickness = thickness, Parent = frame })
+    local glowImg = cfg.Glow and shadow(frame, cfg.GlowSpread or 16, cfg.GlowTransparency or 0.4, color) or nil
 
-    local handle = { Type = "FovCircle" }
-    local destroyed = false
-
+    local handle = { Type = "Circle" }
+    attachShapeCommon(handle, frame, glowImg)
     function handle:SetRadius(r)
-        if destroyed or type(r) ~= "number" then return end
+        if handle._isDestroyed() or type(r) ~= "number" then return self end
         radius = math.max(r, 0)
         frame.Size = UDim2.fromOffset(radius * 2, radius * 2)
+        return self
     end
     function handle:GetRadius() return radius end
-
-    function handle:SetColor(c)
-        if destroyed or typeof(c) ~= "Color3" then return end
-        color = c
-        frame.BackgroundColor3 = c
-        strokeInst.Color = c
-    end
-    function handle:GetColor() return color end
-
     function handle:SetThickness(t)
-        if destroyed or type(t) ~= "number" then return end
+        if handle._isDestroyed() or type(t) ~= "number" then return self end
         thickness = math.max(t, 0)
         strokeInst.Thickness = thickness
+        return self
     end
-    function handle:GetThickness() return thickness end
-
     function handle:SetFilled(f)
-        if destroyed then return end
+        if handle._isDestroyed() then return self end
         filled = f == true
         frame.BackgroundTransparency = filled and fillTrans or 1
+        return self
     end
-    function handle:IsFilled() return filled end
-
     function handle:SetFillTransparency(t)
-        if destroyed or type(t) ~= "number" then return end
+        if handle._isDestroyed() or type(t) ~= "number" then return self end
         fillTrans = math.clamp(t, 0, 1)
-        if filled then
-            frame.BackgroundTransparency = fillTrans
+        if filled then frame.BackgroundTransparency = fillTrans end
+        return self
+    end
+    return handle
+end
+
+-- Rectangle / box. Good for ESP boxes and panels. Size accepts a UDim2 or a
+-- number (square, in pixels). Rounding sets the corner radius.
+function OvertimeUI:CreateSquare(cfg)
+    cfg = cfg or {}
+    local color     = shapeColor(cfg)
+    local thickness = (type(cfg.Thickness) == "number") and math.max(cfg.Thickness, 0) or 2
+    local filled    = cfg.Filled == true
+    local fillTrans = (type(cfg.FillTransparency) == "number") and math.clamp(cfg.FillTransparency, 0, 1) or 0.85
+    local size = (typeof(cfg.Size) == "UDim2") and cfg.Size
+                 or (type(cfg.Size) == "number" and UDim2.fromOffset(cfg.Size, cfg.Size))
+                 or UDim2.fromOffset(120, 120)
+
+    local frame = Create("Frame", {
+        Name = cfg.Name or "Square",
+        AnchorPoint = (typeof(cfg.AnchorPoint) == "Vector2") and cfg.AnchorPoint or Vector2.new(0, 0),
+        Position = (typeof(cfg.Position) == "UDim2") and cfg.Position or UDim2.fromOffset(200, 200),
+        Size = size,
+        BackgroundColor3 = color,
+        BackgroundTransparency = filled and fillTrans or 1,
+        BorderSizePixel = 0,
+        Visible = cfg.Visible ~= false,
+        ZIndex = cfg.ZIndex or 1,
+        Parent = shapeParent(cfg),
+    })
+    corner(frame, cfg.Rounding or 4)
+    local strokeInst = Create("UIStroke", { Color = color, Thickness = thickness, Parent = frame })
+    local glowImg = cfg.Glow and shadow(frame, cfg.GlowSpread or 16, cfg.GlowTransparency or 0.4, color) or nil
+
+    local handle = { Type = "Square" }
+    attachShapeCommon(handle, frame, glowImg)
+    function handle:SetSize(s)
+        if handle._isDestroyed() then return self end
+        if typeof(s) == "UDim2" then frame.Size = s
+        elseif type(s) == "number" then frame.Size = UDim2.fromOffset(s, s) end
+        return self
+    end
+    function handle:GetSize() return frame and frame.Size end
+    function handle:SetThickness(t)
+        if handle._isDestroyed() or type(t) ~= "number" then return self end
+        strokeInst.Thickness = math.max(t, 0)
+        return self
+    end
+    function handle:SetFilled(f)
+        if handle._isDestroyed() then return self end
+        filled = f == true
+        frame.BackgroundTransparency = filled and fillTrans or 1
+        return self
+    end
+    return handle
+end
+
+-- Line / tracer between two pixel points. From/To are Vector2 offsets (screen
+-- pixels); rebuild with :SetPoints(a, b). A thin rotated frame, so no Drawing
+-- API needed.
+function OvertimeUI:CreateLine(cfg)
+    cfg = cfg or {}
+    local color     = shapeColor(cfg)
+    local thickness = (type(cfg.Thickness) == "number") and math.max(cfg.Thickness, 1) or 2
+
+    local frame = Create("Frame", {
+        Name = cfg.Name or "Line",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Visible = cfg.Visible ~= false,
+        ZIndex = cfg.ZIndex or 1,
+        Parent = shapeParent(cfg),
+    })
+    corner(frame, math.floor(thickness / 2))
+
+    local handle = { Type = "Line" }
+    attachShapeCommon(handle, frame, nil)
+    function handle:SetPoints(a, b)
+        if handle._isDestroyed() or typeof(a) ~= "Vector2" or typeof(b) ~= "Vector2" then return self end
+        local delta = b - a
+        local mid = a + delta / 2
+        frame.Position = UDim2.fromOffset(mid.X, mid.Y)
+        frame.Size = UDim2.fromOffset(delta.Magnitude, thickness)
+        frame.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+        return self
+    end
+    function handle:SetThickness(t)
+        if handle._isDestroyed() or type(t) ~= "number" then return self end
+        thickness = math.max(t, 1)
+        frame.Size = UDim2.fromOffset(frame.Size.X.Offset, thickness)
+        return self
+    end
+    if typeof(cfg.From) == "Vector2" and typeof(cfg.To) == "Vector2" then
+        handle:SetPoints(cfg.From, cfg.To)
+    end
+    return handle
+end
+
+-- Floating text. Labels, watermark-style stats, ESP names. Has an outline
+-- stroke by default so it stays readable over any background.
+function OvertimeUI:CreateText(cfg)
+    cfg = cfg or {}
+    local color = (typeof(cfg.Color) == "Color3") and cfg.Color or Color3.fromRGB(236, 238, 246)
+    local frame = Create("TextLabel", {
+        Name = cfg.Name or "Text",
+        AnchorPoint = (typeof(cfg.AnchorPoint) == "Vector2") and cfg.AnchorPoint or Vector2.new(0, 0),
+        Position = (typeof(cfg.Position) == "UDim2") and cfg.Position
+                   or (cfg.Center and UDim2.fromScale(0.5, 0.5) or UDim2.fromOffset(200, 200)),
+        Size = UDim2.fromOffset(0, 0),
+        AutomaticSize = Enum.AutomaticSize.XY,
+        BackgroundTransparency = 1,
+        Text = tostring(cfg.Text or ""),
+        TextColor3 = color,
+        Font = cfg.Font or FONT_SEMI,
+        TextSize = cfg.TextSize or 14,
+        Visible = cfg.Visible ~= false,
+        ZIndex = cfg.ZIndex or 1,
+        Parent = shapeParent(cfg),
+    })
+    if cfg.Stroke ~= false then
+        Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = cfg.StrokeThickness or 1.5,
+            Transparency = cfg.StrokeTransparency or 0.35, Parent = frame })
+    end
+
+    local handle = { Type = "Text" }
+    local destroyed = false
+    handle.GetInstance = function() return frame end
+    function handle:SetText(t) if not destroyed then frame.Text = tostring(t) end return self end
+    function handle:SetColor(c) if not destroyed and typeof(c) == "Color3" then frame.TextColor3 = c end return self end
+    function handle:SetPosition(p) if not destroyed and typeof(p) == "UDim2" then frame.Position = p end return self end
+    function handle:SetVisible(v) if not destroyed then frame.Visible = v ~= false end return self end
+    function handle:IsVisible() return (not destroyed) and frame.Visible end
+    function handle:Destroy() if not destroyed then destroyed = true frame:Destroy() frame = nil end end
+    return handle
+end
+
+-- Image. Logos, custom cursors, ESP icons, decorative accents.
+function OvertimeUI:CreateImage(cfg)
+    cfg = cfg or {}
+    local frame = Create("ImageLabel", {
+        Name = cfg.Name or "Image",
+        AnchorPoint = (typeof(cfg.AnchorPoint) == "Vector2") and cfg.AnchorPoint or Vector2.new(0, 0),
+        Position = (typeof(cfg.Position) == "UDim2") and cfg.Position or UDim2.fromOffset(200, 200),
+        Size = (typeof(cfg.Size) == "UDim2") and cfg.Size or UDim2.fromOffset(64, 64),
+        BackgroundTransparency = 1,
+        Image = tostring(cfg.Image or ""),
+        ImageColor3 = (typeof(cfg.Color) == "Color3") and cfg.Color or Color3.new(1, 1, 1),
+        ImageTransparency = (type(cfg.Transparency) == "number") and cfg.Transparency or 0,
+        ScaleType = cfg.ScaleType or Enum.ScaleType.Fit,
+        Visible = cfg.Visible ~= false,
+        ZIndex = cfg.ZIndex or 1,
+        Parent = shapeParent(cfg),
+    })
+    if cfg.Rounding then corner(frame, cfg.Rounding) end
+
+    local handle = { Type = "Image" }
+    local destroyed = false
+    handle.GetInstance = function() return frame end
+    function handle:SetImage(i) if not destroyed then frame.Image = tostring(i) end return self end
+    function handle:SetColor(c) if not destroyed and typeof(c) == "Color3" then frame.ImageColor3 = c end return self end
+    function handle:SetTransparency(t) if not destroyed and type(t) == "number" then frame.ImageTransparency = math.clamp(t, 0, 1) end return self end
+    function handle:SetPosition(p) if not destroyed and typeof(p) == "UDim2" then frame.Position = p end return self end
+    function handle:SetSize(s) if not destroyed and typeof(s) == "UDim2" then frame.Size = s end return self end
+    function handle:SetVisible(v) if not destroyed then frame.Visible = v ~= false end return self end
+    function handle:IsVisible() return (not destroyed) and frame.Visible end
+    function handle:Destroy() if not destroyed then destroyed = true frame:Destroy() frame = nil end end
+    return handle
+end
+
+-- =========================================================================
+-- Watermark — a small draggable status chip (name / FPS / ping / build).
+-- =========================================================================
+-- A classic decoration: a rounded chip with an accent stripe + glow that
+-- sits in a corner and shows live text. Returns a handle with :SetText,
+-- :SetAccent, :SetVisible, :Destroy. Drag it anywhere.
+function OvertimeUI:CreateWatermark(cfg)
+    cfg = cfg or {}
+    local theme = defaultTheme()
+    if typeof(cfg.Accent) == "Color3" then theme.accent = cfg.Accent end
+    local gui = ensureOverlay()
+
+    local chip = Create("Frame", {
+        Name = "Watermark",
+        Size = UDim2.fromOffset(cfg.Width or 200, 30),
+        Position = (typeof(cfg.Position) == "UDim2") and cfg.Position or UDim2.fromOffset(16, 16),
+        BackgroundColor3 = theme.bg,
+        BorderSizePixel = 0,
+        Active = true,
+        Visible = cfg.Visible ~= false,
+        Parent = gui,
+    })
+    corner(chip, 8)
+    stroke(chip, theme.borderHi, 1)
+    sheen(chip, 0.10)
+    shadow(chip, 18, 0.45)
+
+    local stripe = Create("Frame", {
+        Size = UDim2.new(0, 3, 1, -12),
+        Position = UDim2.new(0, 8, 0, 6),
+        BackgroundColor3 = theme.accent,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = chip,
+    })
+    corner(stripe, 2)
+    local sGlow = shadow(stripe, 9, 0.3, theme.accent)
+    sGlow.ZIndex = 1
+
+    local lbl = Create("TextLabel", {
+        Size = UDim2.new(1, -22, 1, 0),
+        Position = UDim2.new(0, 18, 0, 0),
+        BackgroundTransparency = 1,
+        Text = tostring(cfg.Text or "OvertimeUI"),
+        TextColor3 = theme.text,
+        Font = FONT_SEMI,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 2,
+        Parent = chip,
+    })
+
+    local dragging, dragStart, startPos = false, nil, nil
+    chip.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true ; dragStart = input.Position ; startPos = chip.Position
         end
-    end
-    function handle:GetFillTransparency() return fillTrans end
+    end)
+    chip.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end)
+    local dragConn = UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+                      or input.UserInputType == Enum.UserInputType.Touch) then
+            local d = input.Position - dragStart
+            chip.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                                      startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
 
-    function handle:SetVisible(v)
-        if destroyed then return end
-        visible = v ~= false
-        frame.Visible = visible
+    local handle = { Type = "Watermark" }
+    local destroyed = false
+    function handle:SetText(t) if not destroyed then lbl.Text = tostring(t) end return self end
+    function handle:SetAccent(c)
+        if destroyed or typeof(c) ~= "Color3" then return self end
+        stripe.BackgroundColor3 = c ; sGlow.ImageColor3 = c
+        return self
     end
-    function handle:IsVisible() return visible end
-
+    function handle:SetVisible(v) if not destroyed then chip.Visible = v ~= false end return self end
+    function handle:IsVisible() return (not destroyed) and chip.Visible end
     function handle:Destroy()
         if destroyed then return end
         destroyed = true
-        if frame then
-            frame:Destroy()
-            frame = nil
-        end
+        if dragConn then dragConn:Disconnect() dragConn = nil end
+        chip:Destroy()
     end
-
     return handle
 end
+
+-- =========================================================================
+-- Styling kit — exposed so scripts can build custom, on-theme widgets.
+-- =========================================================================
+-- OvertimeUI.Theme() returns a fresh copy of the default palette (mutate it
+-- freely). OvertimeUI.Util gives the same low-level builders the library
+-- uses internally, so a script's custom decorations match the rest of the UI:
+--
+--     local U, T = UI.Util, UI.Theme()
+--     local box = U.Create("Frame", { Size = UDim2.fromOffset(120, 40), BackgroundColor3 = T.surface })
+--     U.corner(box, 6) ; U.stroke(box, T.border, 1) ; U.shadow(box, 16, 0.4)
+--     U.tween(box, { BackgroundColor3 = T.accent }, U.Easing.Normal)
+OvertimeUI.Theme = function() return defaultTheme() end
+OvertimeUI.Util = {
+    Create   = Create,
+    corner   = corner,
+    stroke   = stroke,
+    sheen    = sheen,
+    gradient = sheen,
+    shadow   = shadow,
+    padding  = padding,
+    tween    = tween,
+    Easing   = { Style = EASE, Direction = EASE_OUT, Spring = SPRING,
+                 Fast = T_FAST, Normal = T_NORMAL, Slow = T_SLOW },
+    Fonts    = { Regular = FONT, Bold = FONT_BOLD, Semi = FONT_SEMI },
+}
 
 return OvertimeUI
