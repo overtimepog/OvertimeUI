@@ -1238,6 +1238,97 @@ function Section:CreateParagraph(cfg)
     return handle
 end
 
+-- =========================================================================
+-- Input — single-line text box with a name label.
+-- =========================================================================
+function Section:CreateInput(cfg)
+    cfg = cfg or {}
+    local theme = self.tab.window.theme
+
+    local currentText = cfg.CurrentValue or ""
+    local handle = {
+        Type = "Input",
+        Name = cfg.Name or "Input",
+    }
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, 26),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    local nameLabel = Create("TextLabel", {
+        Size = UDim2.new(0.45, -4, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Name or "Input",
+        TextColor3 = theme.text,
+        Font = FONT_SEMI,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = row,
+    })
+
+    local box = Create("TextBox", {
+        Size = UDim2.new(0.55, -2, 0, 22),
+        Position = UDim2.new(0.45, 2, 0.5, -11),
+        BackgroundColor3 = theme.surface,
+        BorderSizePixel = 0,
+        Text = currentText,
+        PlaceholderText = cfg.PlaceholderText or "",
+        PlaceholderColor3 = theme.textDim,
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        ClearTextOnFocus = cfg.ClearTextOnFocus == true,
+        Parent = row,
+    })
+    corner(box, 4)
+    stroke(box, theme.border, 1)
+
+    local function fireCallback()
+        currentText = box.Text
+        if cfg.Callback then
+            task.spawn(cfg.Callback, currentText)
+        end
+    end
+
+    box.FocusLost:Connect(function(enterPressed)
+        fireCallback()
+    end)
+
+    -- Optional: fire on text change (debounced)
+    if cfg.Immediate == true then
+        local debounce
+        box:GetPropertyChangedSignal("Text"):Connect(function()
+            if debounce then task.cancel(debounce) end
+            debounce = task.delay(0.3, function()
+                debounce = nil
+                fireCallback()
+            end)
+        end)
+    end
+
+    function handle:Get() return currentText end
+
+    function handle:Set(text)
+        if type(text) ~= "string" then return end
+        currentText = text
+        box.Text = text
+        fireCallback()
+    end
+
+    function handle:SetSilent(text)
+        if type(text) ~= "string" then return end
+        currentText = text
+        box.Text = text
+    end
+
+    return handle
+end
+
 -- LayoutOrder counter so items show up in the order they were added even
 -- though they share a parent UIListLayout.
 function Section:_next()
