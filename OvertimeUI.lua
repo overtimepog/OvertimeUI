@@ -1670,27 +1670,37 @@ function Tab:CreateSection(name)
         })
     end
 
-    local header = Create("TextLabel", {
+    -- Header row = a transparent list item holding the accent tick + the
+    -- title. The page's UIListLayout overrides a child's Position, so the
+    -- tick can't live directly on the laid-out label (it would land at x=0,
+    -- overprinting the first letter — that's what turned "INFO" into "NFO").
+    -- Wrapping them in this non-laid-out frame lets both sit where we put
+    -- them: tick in the control column, title indented just past it.
+    local headerRow = Create("Frame", {
         Size = UDim2.new(1, -10, 0, 16),
-        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        LayoutOrder = sectionOrder * 1000 + 1,
+        Parent = self.page,
+    })
+    local tick = Create("Frame", {
+        Size = UDim2.fromOffset(3, 11),
+        Position = UDim2.new(0, 2, 0.5, -5),
+        BackgroundColor3 = theme.accent,
+        BorderSizePixel = 0,
+        Parent = headerRow,
+    })
+    corner(tick, 2)
+    local header = Create("TextLabel", {
+        Size = UDim2.new(1, -12, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
         BackgroundTransparency = 1,
         Text = string.upper(name or "Section"),
         TextColor3 = theme.accent,
         Font = FONT_BOLD,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = sectionOrder * 1000 + 1,
-        Parent = self.page,
+        Parent = headerRow,
     })
-    -- Small accent tick sitting to the left of the section label.
-    local tick = Create("Frame", {
-        Size = UDim2.fromOffset(3, 11),
-        Position = UDim2.new(0, 1, 0.5, -5),
-        BackgroundColor3 = theme.accent,
-        BorderSizePixel = 0,
-        Parent = header,
-    })
-    corner(tick, 2)
 
     -- Container for the section's controls. Uses its own UIListLayout so
     -- the controls stack cleanly under the header.
