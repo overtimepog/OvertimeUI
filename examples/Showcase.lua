@@ -1,21 +1,15 @@
--- Showcase.lua — four windows, one library, zero family resemblance.
+-- Showcase.lua — many looks, one library.
 --
--- Every window below is built from the *same* OvertimeUI. The only thing that
--- differs is the Theme (colours) and Style (structure) passed to CreateWindow.
--- Run it and you should see four menus that don't look like they came from the
--- same place — which is the whole point: the library shouldn't stamp a generic
--- look onto your script.
+-- Each window is built from the SAME OvertimeUI. The differences are all
+-- config: presets (curated theme + structure + depth bundles), the depth flags
+-- (gradient strokes, accent glow, gradient fills), tab icons, and the two-column
+-- groupbox layout. Run it and you should see menus that don't look related.
 --
--- Re-run to toggle each window off (they share the standard marker handshake;
--- because each has a distinct Name, each toggles independently — but this demo
--- re-runs them together, so a second run clears all four).
+-- Re-run to toggle the windows off.
 
--- The library version this showcase was written against. If the version that
--- actually loads doesn't match, you're almost certainly looking at a stale
--- raw.githubusercontent CDN copy (cached up to ~5 min) — the new tokens won't
--- render until it catches up. The check below shouts about that so you don't
--- waste time wondering why "top" layout / gradients aren't showing.
-local EXPECTED_VERSION = "0.2.0"
+-- Bump this whenever the library changes so a stale raw.githubusercontent CDN
+-- copy (cached up to ~5 min) is obvious instead of looking like a broken build.
+local EXPECTED_VERSION = "0.3.0"
 
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/overtimepog/OvertimeUI/main/OvertimeUI.lua"))()
 if not UI then warn("[Showcase] Failed to load OvertimeUI"); return end
@@ -29,96 +23,68 @@ else
     print("[Showcase] OvertimeUI v" .. loaded .. " (matches expected v" .. EXPECTED_VERSION .. ")")
 end
 
--- Small helper so each window gets a couple of representative controls without
--- repeating the boilerplate four times.
+-- Fill a single-column (Section-based) window with a representative spread.
 local function populate(Window, accent)
     if not Window then return end
-    local tabA = Window:CreateTab("Main")
-    local s1 = tabA:CreateSection("General")
-    s1:CreateToggle({ Name = "Enable", CurrentValue = true,
-        Callback = function(v) print("enable", v) end })
-    s1:CreateSlider({ Name = "Strength", Range = { 0, 100 }, CurrentValue = 50, Suffix = "%",
-        Callback = function(v) print("strength", v) end })
-    s1:CreateDropdown({ Name = "Mode", Options = { "Smooth", "Snap", "Predict" }, CurrentOption = "Smooth",
-        Callback = function(o) print("mode", o) end })
-    local s2 = tabA:CreateSection("Color")
-    s2:CreateColorPicker({ Name = "Highlight", CurrentColor = accent,
-        Callback = function(c) print("color", c) end })
-    s2:CreateButton({ Name = "Apply", Callback = function() print("apply") end })
-
-    local tabB = Window:CreateTab("Misc")
-    local s3 = tabB:CreateSection("Info")
-    s3:CreateParagraph({ Title = "About", Content = "Same library, custom skin." })
-    s3:CreateKeybind({ Name = "Panic Key", CurrentKeybind = "RightShift",
-        Callback = function(k) print("panic", k) end })
+    local main = Window:CreateTab("Main", { Icon = "rbxassetid://10709790644" })   -- a gear-ish icon
+    local g = main:CreateSection("General")
+    g:CreateToggle({ Name = "Enable", CurrentValue = true, Callback = function() end })
+    g:CreateSlider({ Name = "Strength", Range = { 0, 100 }, CurrentValue = 60, Suffix = "%", Callback = function() end })
+    g:CreateDropdown({ Name = "Mode", Options = { "Smooth", "Snap", "Predict" }, Callback = function() end })
+    local c = main:CreateSection("Color")
+    c:CreateColorPicker({ Name = "Highlight", CurrentColor = accent, Callback = function() end })
+    c:CreateButton({ Name = "Apply", Callback = function() end })
+    local misc = Window:CreateTab("Misc", { Icon = "rbxassetid://10734898355" })   -- an info-ish icon
+    local i = misc:CreateSection("Info")
+    i:CreateParagraph({ Title = "About", Content = "Same library — the look is all config." })
+    i:CreateKeybind({ Name = "Panic Key", CurrentKeybind = "RightShift", Callback = function() end })
 end
 
--- 1) "Aurora" — top tab-bar, centred title, pill corners, gradient accent,
---    glassy panel, snappy motion. Top-left of the screen.
+-- 1) AURORA preset — modern frosted top-bar, gradient accent, glow. Top-left.
 populate(UI:CreateWindow({
-    Name              = "Aurora",
-    SubTitle          = "top bar · glass",
-    Position          = UDim2.fromOffset(40, 40),
-    TitleAlign        = "center",
-    AccentGradient    = { Color3.fromRGB(120, 90, 255), Color3.fromRGB(0, 200, 255) },
-    Layout            = "top",
-    Roundness         = 2,
-    PanelTransparency = 0.12,
-    Animation         = 0.6,
-    Theme = { bg = Color3.fromRGB(18, 16, 28), bgAlt = Color3.fromRGB(24, 22, 36),
-              surface = Color3.fromRGB(34, 31, 50), surfaceHi = Color3.fromRGB(48, 44, 70) },
+    Preset = "Aurora", Name = "Aurora", SubTitle = "preset · top · glass",
+    Position = UDim2.fromOffset(40, 40),
 }), Color3.fromRGB(120, 90, 255))
 
--- 2) "RootKit" — dense, sharp, heavy-framed terminal look, no decorations.
---    Top-right of the screen.
+-- 2) SLEEK preset — Rayfield-style sidebar with glow + gradient framing. Top-right.
 populate(UI:CreateWindow({
-    Name            = "RootKit",
-    Position        = UDim2.new(1, -480, 0, 40),
-    Size            = UDim2.fromOffset(440, 320),
-    Accent          = Color3.fromRGB(0, 255, 140),
-    Roundness       = 0,
-    Font            = Enum.Font.Code,
-    FontBold        = Enum.Font.Code,
-    FontSemi        = Enum.Font.Code,
-    StrokeThickness = 2,
-    TabWidth        = 96,
-    TabHeight       = 24,
-    BodyPadding     = 8,
-    Spacing         = 1,
-    Sheen           = false,
-    Shadow          = false,
-    Theme = { bg = Color3.fromRGB(8, 10, 9), bgAlt = Color3.fromRGB(12, 16, 14),
-              surface = Color3.fromRGB(18, 24, 20), border = Color3.fromRGB(0, 90, 50),
-              borderHi = Color3.fromRGB(0, 160, 90), text = Color3.fromRGB(180, 255, 210) },
-}), Color3.fromRGB(0, 255, 140))
-
--- 3) "Velvet" — warm, soft, roomy, big rounded sidebar, languid motion.
---    Bottom-left of the screen.
-populate(UI:CreateWindow({
-    Name        = "Velvet",
-    SubTitle    = "warm · roomy",
-    Position    = UDim2.new(0, 40, 1, -400),
-    Size        = UDim2.fromOffset(540, 360),
-    Accent      = Color3.fromRGB(255, 120, 90),
-    Roundness   = 1.6,
-    TitleHeight = 48,
-    TabWidth    = 150,
-    TabHeight   = 38,
-    BodyPadding = 18,
-    Spacing     = 6,
-    Animation   = 1.5,
-    Theme = { bg = Color3.fromRGB(30, 22, 24), bgAlt = Color3.fromRGB(40, 30, 32),
-              surface = Color3.fromRGB(54, 40, 42), surfaceHi = Color3.fromRGB(72, 54, 56),
-              text = Color3.fromRGB(245, 236, 232), textDim = Color3.fromRGB(180, 150, 148) },
-}), Color3.fromRGB(255, 120, 90))
-
--- 4) "Stock" — defaults, for side-by-side comparison. Bottom-right.
-populate(UI:CreateWindow({
-    Name     = "Stock",
-    SubTitle = "defaults · v" .. loaded,
-    Position = UDim2.new(1, -560, 1, -400),
-    Accent   = Color3.fromRGB(96, 165, 255),
+    Preset = "Sleek", Name = "Sleek", SubTitle = "preset · lit sidebar",
+    Position = UDim2.new(1, -480, 0, 40),
 }), Color3.fromRGB(96, 165, 255))
 
-print(("[Showcase] Four windows up (OvertimeUI v%s) — same library, four looks. Re-run to clear.")
+-- 3) TERMINAL preset — dense, sharp, monospaced, no glow. Bottom-left.
+populate(UI:CreateWindow({
+    Preset = "Terminal", Name = "RootKit", SubTitle = "preset · dense",
+    Position = UDim2.new(0, 40, 1, -400), Size = UDim2.fromOffset(440, 320),
+}), Color3.fromRGB(80, 220, 120))
+
+-- 4) COMPACT preset + TWO-COLUMN GROUPBOXES — the Linoria "cheat menu" energy.
+--    Bottom-right. This is a different STRUCTURE, not just a recolor.
+do
+    local W = UI:CreateWindow({
+        Preset = "Compact", Name = "Cobalt", SubTitle = "preset · two columns · v" .. loaded,
+        Position = UDim2.new(1, -560, 1, -400), Size = UDim2.fromOffset(540, 380),
+    })
+    if W then
+        local combat = W:CreateTab("Combat", { Icon = "rbxassetid://10709805956" })
+        local aim = combat:CreateLeftGroupbox("Aimbot")
+        aim:CreateToggle({ Name = "Enabled", CurrentValue = true, Callback = function() end })
+            :AddKeybind({ CurrentKeybind = "MouseButton2", Callback = function() end })
+        aim:CreateSlider({ Name = "FOV", Range = { 0, 360 }, CurrentValue = 120, Callback = function() end })
+        aim:CreateSlider({ Name = "Smoothness", Range = { 0, 1 }, Increment = 0.05, CurrentValue = 0.3, Callback = function() end })
+        aim:CreateDropdown({ Name = "Target", Options = { "Head", "Torso", "Nearest" }, Callback = function() end })
+
+        local esp = combat:CreateRightGroupbox("ESP")
+        esp:CreateToggle({ Name = "Boxes", CurrentValue = true, Callback = function() end })
+        esp:CreateToggle({ Name = "Names", CurrentValue = true, Callback = function() end })
+        esp:CreateToggle({ Name = "Tracers", CurrentValue = false, Callback = function() end })
+        esp:CreateColorPicker({ Name = "Color", CurrentColor = Color3.fromRGB(120, 200, 255), Callback = function() end })
+
+        local cfg = combat:CreateRightGroupbox("Config")
+        cfg:CreateButton({ Name = "Save", Callback = function() end })
+        cfg:CreateButton({ Name = "Load", Callback = function() end })
+    end
+end
+
+print(("[Showcase] Windows up (OvertimeUI v%s) — presets, depth, icons, two-column groupboxes.")
     :format(loaded))

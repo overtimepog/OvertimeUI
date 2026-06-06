@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.2.0"
+OvertimeUI._VERSION = "0.3.0"
 
 -- =========================================================================
 -- Services & shared state
@@ -71,6 +71,17 @@ local STROKE         = DEFAULT_STROKE
 local DEFAULT_ANIM = 1
 local ANIM         = DEFAULT_ANIM
 
+-- Depth flags — the difference between a flat single-layer look and a
+-- premium one. All default OFF so the stock look is unchanged; presets and
+-- scripts opt in. Mirrored into upvalues by applyStyle() so the global
+-- builders can read them without a window reference.
+--   gradientStroke : key borders become a light-catching colour sweep
+--   accentGlow     : a soft accent-tinted glow behind the panel + active controls
+--   gradientFill   : surfaces get a subtle top-lit fill gradient (depth)
+local GRAD_STROKE = false
+local ACCENT_GLOW = false
+local GRAD_FILL   = false
+
 -- Default *structural* style (non-color). Merged from CreateWindow's style
 -- fields; colors live in defaultTheme(). Keeping them apart means a script can
 -- recolor without touching layout, or resize roundness without recoloring.
@@ -109,6 +120,10 @@ local function defaultStyle()
         tabHeight   = 30,                      -- per-tab button height
         bodyPadding = 12,                      -- inner padding of each tab page
         spacing     = 2,                       -- vertical gap between control rows
+        -- depth (all off = stock flat look) ----------------------------------
+        gradientStroke = false,                -- light-catching gradient borders
+        accentGlow     = false,                -- accent glow behind panel + active controls
+        gradientFill   = false,                -- subtle top-lit fill gradient on surfaces
     }
 end
 
@@ -124,6 +139,9 @@ local function applyStyle(style)
     FONT_SEMI = (typeof(style.fontSemi) == "EnumItem") and style.fontSemi or DEFAULT_FONT_SEMI
     STROKE    = type(style.strokeThickness) == "number" and math.max(0, style.strokeThickness) or DEFAULT_STROKE
     ANIM      = type(style.animation) == "number" and math.max(0, style.animation) or DEFAULT_ANIM
+    GRAD_STROKE = style.gradientStroke == true
+    ACCENT_GLOW = style.accentGlow == true
+    GRAD_FILL   = style.gradientFill == true
 end
 
 -- Default theme. Individual windows can override `accent` via the Accent
@@ -147,6 +165,109 @@ local function defaultTheme()
         shadow      = Color3.fromRGB(0, 0, 0),
     }
 end
+
+-- =========================================================================
+-- Built-in palettes and presets
+-- =========================================================================
+-- Themes are partial colour tables merged over defaultTheme() — pass one
+-- straight into CreateWindow's `Theme` field, or reference by name through a
+-- preset. Presets are FULL config bundles (theme + structure + depth) so a
+-- script gets a distinct, finished look in one line:
+--
+--     local Window = UI:CreateWindow({ Preset = "Aurora", Name = "My Script" })
+--
+-- Anything the script passes alongside `Preset` overrides the preset
+-- (Theme/Style are deep-merged; everything else is replaced), so you can start
+-- from a preset and tweak just the accent or the name.
+
+local rgb = Color3.fromRGB
+
+OvertimeUI.Themes = {
+    Dark    = defaultTheme(),  -- the stock palette, for completeness
+    Midnight = {
+        bg = rgb(10, 12, 22), bgAlt = rgb(14, 17, 30), surface = rgb(22, 27, 46),
+        surfaceHi = rgb(32, 40, 64), border = rgb(34, 42, 70), borderHi = rgb(60, 80, 140),
+        accent = rgb(90, 130, 255), accentDim = rgb(48, 70, 150), accentGlow = rgb(120, 150, 255),
+        text = rgb(232, 236, 252), textDim = rgb(120, 130, 165),
+    },
+    Aqua = {
+        bg = rgb(8, 18, 20), bgAlt = rgb(12, 24, 27), surface = rgb(18, 36, 40),
+        surfaceHi = rgb(26, 52, 58), border = rgb(24, 54, 58), borderHi = rgb(40, 110, 120),
+        accent = rgb(0, 224, 200), accentDim = rgb(20, 110, 100), accentGlow = rgb(80, 255, 230),
+        text = rgb(224, 248, 246), textDim = rgb(110, 150, 150),
+    },
+    Rose = {
+        bg = rgb(24, 12, 18), bgAlt = rgb(32, 16, 24), surface = rgb(46, 24, 34),
+        surfaceHi = rgb(64, 34, 48), border = rgb(64, 32, 46), borderHi = rgb(140, 60, 90),
+        accent = rgb(255, 90, 150), accentDim = rgb(150, 50, 90), accentGlow = rgb(255, 130, 180),
+        text = rgb(252, 234, 242), textDim = rgb(170, 130, 145),
+    },
+    Mono = {
+        bg = rgb(14, 14, 16), bgAlt = rgb(20, 20, 23), surface = rgb(30, 30, 34),
+        surfaceHi = rgb(44, 44, 50), border = rgb(48, 48, 54), borderHi = rgb(96, 96, 104),
+        accent = rgb(230, 230, 236), accentDim = rgb(110, 110, 120), accentGlow = rgb(255, 255, 255),
+        text = rgb(238, 238, 242), textDim = rgb(130, 130, 138),
+    },
+    Forest = {
+        bg = rgb(10, 16, 12), bgAlt = rgb(14, 22, 16), surface = rgb(20, 32, 24),
+        surfaceHi = rgb(30, 48, 36), border = rgb(28, 48, 34), borderHi = rgb(50, 100, 64),
+        accent = rgb(80, 220, 120), accentDim = rgb(40, 110, 64), accentGlow = rgb(120, 255, 160),
+        text = rgb(228, 244, 232), textDim = rgb(120, 150, 130),
+    },
+    Amber = {
+        bg = rgb(22, 16, 8), bgAlt = rgb(30, 22, 12), surface = rgb(44, 32, 18),
+        surfaceHi = rgb(62, 46, 26), border = rgb(60, 44, 24), borderHi = rgb(140, 100, 50),
+        accent = rgb(255, 170, 50), accentDim = rgb(150, 100, 30), accentGlow = rgb(255, 200, 110),
+        text = rgb(250, 240, 226), textDim = rgb(168, 148, 120),
+    },
+}
+
+OvertimeUI.Presets = {
+    -- Modern frosted top-bar with a gradient accent and glow — the "premium" look.
+    Aurora = {
+        Theme = OvertimeUI.Themes.Midnight,
+        AccentGradient = { rgb(120, 90, 255), rgb(0, 200, 255) },
+        Layout = "top", TitleAlign = "center", Roundness = 2,
+        PanelTransparency = 0.10, Animation = 0.7,
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+    -- Rayfield-style sleek single-column sidebar: rounded, lit, glowing accent.
+    Sleek = {
+        Theme = OvertimeUI.Themes.Dark,
+        Accent = rgb(96, 165, 255),
+        Roundness = 1.3, Animation = 0.8,
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+    -- Dense, sharp, monospaced terminal: hard corners, chunky frame, no glow.
+    Terminal = {
+        Theme = OvertimeUI.Themes.Forest,
+        Font = Enum.Font.Code, FontBold = Enum.Font.Code, FontSemi = Enum.Font.Code,
+        Roundness = 0, StrokeThickness = 2,
+        TabWidth = 96, TabHeight = 24, BodyPadding = 8, Spacing = 1,
+        Sheen = false, Shadow = false,
+    },
+    -- Compact cheat-menu palette meant to be paired with two-column groupboxes.
+    Compact = {
+        Theme = OvertimeUI.Themes.Mono,
+        Accent = rgb(120, 200, 255),
+        Roundness = 0.5, TabWidth = 104, TabHeight = 26, BodyPadding = 8, Spacing = 1,
+        GradientStroke = true,
+    },
+    -- Warm, roomy, languid — soft and unhurried.
+    Velvet = {
+        Theme = OvertimeUI.Themes.Rose,
+        Roundness = 1.6, TitleHeight = 46, TabWidth = 148, TabHeight = 36,
+        BodyPadding = 18, Spacing = 6, Animation = 1.5,
+        AccentGlow = true, GradientFill = true,
+    },
+    -- Heavy glass: translucent panel, big glow, gradient everything.
+    Glass = {
+        Theme = OvertimeUI.Themes.Aqua,
+        AccentGradient = { rgb(0, 224, 200), rgb(60, 140, 255) },
+        Roundness = 1.8, PanelTransparency = 0.22, Animation = 0.8,
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+}
 
 -- Shadow / glow image. A soft 9-slice drop shadow used behind the panel and
 -- as a tinted glow behind active elements. If this asset ever fails to load
@@ -356,6 +477,51 @@ local function padding(parent, t, b, l, r)
 end
 
 -- =========================================================================
+-- Depth helpers — gradients, glows. Used to lift the flat default into a
+-- premium look when the matching Style flag is on (GRAD_STROKE / ACCENT_GLOW
+-- / GRAD_FILL). Each is a no-op-ish fallback when its flag is off, so call
+-- sites read the same whether depth is enabled or not.
+-- =========================================================================
+
+-- A gradient outline: a UIStroke carrying a child UIGradient that runs from
+-- colorA to colorB, so the border catches light along its length (the modern
+-- "UIStroke × UIGradient" trick). Returns the UIStroke.
+local function gradStroke(parent, colorA, colorB, thickness, rotation)
+    local s = Create("UIStroke", { Color = colorA, Thickness = thickness or STROKE, Parent = parent })
+    Create("UIGradient", {
+        Color = ColorSequence.new(colorA, colorB),
+        Rotation = rotation or 90,
+        Parent = s,
+    })
+    return s
+end
+
+-- Stroke a surface, honouring the GRAD_STROKE flag: gradient edge when on,
+-- plain hairline when off. `hi` is the bright end of the gradient (defaults to
+-- a lighter version of the base). Drop-in replacement for stroke() on the
+-- panel, cards, and other framed surfaces.
+local function depthStroke(parent, color, hi, thickness)
+    if GRAD_STROKE then
+        return gradStroke(parent, color, hi or color, thickness)
+    end
+    return Create("UIStroke", { Color = color, Thickness = thickness or STROKE, Parent = parent })
+end
+
+-- Soft accent-tinted glow behind `parent` (reuses the shadow 9-slice, tinted).
+-- Returns the ImageLabel, or nil when ACCENT_GLOW is off so callers can guard
+-- on the result. `force` builds the glow regardless of the flag.
+local function accentGlowBehind(parent, color, transparency, spread, force)
+    if not (ACCENT_GLOW or force) then return nil end
+    return shadow(parent, spread or 16, transparency or 0.62, color)
+end
+
+-- Subtle top-lit fill gradient, gated on GRAD_FILL. No-op when off.
+local function depthFill(parent, strength)
+    if not GRAD_FILL then return nil end
+    return sheen(parent, strength or 0.07)
+end
+
+-- =========================================================================
 -- Shared keybind button builder
 -- =========================================================================
 -- Used by Section:CreateKeybind (a full row with a name label + a keybind
@@ -491,15 +657,37 @@ function Section:CreateToggle(cfg)
     })
 
     -- Flat pill switch (Fluent-style): track tints surface→accent, a plain
-    -- dot slides across. No glow halo, no overshoot — clean motion only.
-    -- Off knob is a muted dot; on knob is white, so the state reads at a
-    -- glance even before you clock the track colour.
+    -- dot slides across. Off knob is a muted dot; on knob is white, so the
+    -- state reads at a glance even before you clock the track colour. When
+    -- accentGlow is on, an accent halo fades in behind the track while active.
     local TRACK_W, TRACK_H, KNOB = 36, 18, 14
+
+    -- Glow sits behind the track (ZIndex 0, sibling in the row) so it never
+    -- covers the knob. Only built when accentGlow is enabled.
+    local trackGlow
+    if ACCENT_GLOW then
+        trackGlow = Create("ImageLabel", {
+            Name = "Glow",
+            BackgroundTransparency = 1,
+            Image = SHADOW_ASSET,
+            ImageColor3 = theme.accentGlow or theme.accent,
+            ImageTransparency = state and 0.45 or 1,
+            ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = SHADOW_SLICE,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0, 2 + TRACK_W / 2, 0.5, 0),
+            Size = UDim2.fromOffset(TRACK_W + 22, TRACK_H + 22),
+            ZIndex = 0,
+            Parent = row,
+        })
+    end
+
     local track = Create("Frame", {
         Size = UDim2.fromOffset(TRACK_W, TRACK_H),
         Position = UDim2.new(0, 2, 0.5, -TRACK_H / 2),
         BackgroundColor3 = state and theme.accent or theme.surface,
         BorderSizePixel = 0,
+        ZIndex = 1,
         Parent = row,
     })
     corner(track, TRACK_H / 2)
@@ -534,6 +722,7 @@ function Section:CreateToggle(cfg)
         state = v
         tween(track, { BackgroundColor3 = state and theme.accent or theme.surface }, T_NORMAL)
         tween(trackStroke, { Color = state and theme.accent or theme.border }, T_NORMAL)
+        if trackGlow then tween(trackGlow, { ImageTransparency = state and 0.45 or 1 }, T_NORMAL) end
         tween(label, { TextColor3 = state and theme.text or theme.textDim }, T_NORMAL)
         tween(knob, {
             Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
@@ -1856,15 +2045,146 @@ function Tab:_next()
 end
 
 -- =========================================================================
+-- Groupboxes — two-column "cheat menu" layout (Linoria-style)
+-- =========================================================================
+-- Tab:CreateLeftGroupbox(name) / CreateRightGroupbox(name) each return a
+-- Section handle (same metatable — every Section:CreateX works inside) rendered
+-- as a bordered, titled CARD stacked in the left or right column. The first
+-- call lazily builds the two-column container inside the tab page; you can stack
+-- as many groupboxes per column as you like and they pack densely. Pick ONE
+-- layout per tab: either CreateSection (single column) or groupboxes (two
+-- columns) — don't mix them in the same tab.
+
+function Tab:_ensureColumns()
+    if self._columns then return self._columns end
+    local window = self.window
+    if window.style then applyStyle(window.style) end
+
+    local row = Create("Frame", {
+        Name = "Columns",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        LayoutOrder = 1,
+        Parent = self.page,
+    })
+    Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 8),
+        VerticalAlignment = Enum.VerticalAlignment.Top,
+        Parent = row,
+    })
+
+    local function makeColumn(order)
+        local col = Create("Frame", {
+            Size = UDim2.new(0.5, -6, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            LayoutOrder = order,
+            Parent = row,
+        })
+        Create("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 8),
+            Parent = col,
+        })
+        return col
+    end
+
+    self._columns = { left = makeColumn(1), right = makeColumn(2) }
+    return self._columns
+end
+
+function Tab:CreateGroupbox(side, name)
+    local window = self.window
+    if window.style then applyStyle(window.style) end
+    local theme = window.theme
+    local cols  = self:_ensureColumns()
+    local parentCol = (side == "right") and cols.right or cols.left
+
+    -- The card itself: a bordered, optionally-gradient-framed surface that grows
+    -- to fit its controls.
+    local card = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = theme.bgAlt,
+        BorderSizePixel = 0,
+        LayoutOrder = (#self.sections + 1),
+        Parent = parentCol,
+    })
+    corner(card, 6)
+    depthStroke(card, theme.border, theme.borderHi)
+    depthFill(card, 0.06)
+
+    local header = Create("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 26),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = string.upper(name or "Group"),
+        TextColor3 = theme.accent,
+        Font = FONT_BOLD,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = card,
+    })
+    -- A faint divider under the header gives the card a "titled panel" read.
+    local hsep = Create("Frame", {
+        Size = UDim2.new(1, -20, 0, 1),
+        Position = UDim2.new(0, 10, 0, 25),
+        BackgroundColor3 = theme.border,
+        BorderSizePixel = 0,
+        Parent = card,
+    })
+    applyAccentGradient(hsep, window.accentGradient, 0)
+
+    -- Inner container holds the controls; positioned below the header, grows
+    -- downward. A bottom padding keeps the last control off the card edge.
+    local container = Create("Frame", {
+        Size = UDim2.new(1, -20, 0, 0),
+        Position = UDim2.new(0, 10, 0, 30),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Parent = card,
+    })
+    Create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, math.max(0, math.floor((window.style and window.style.spacing) or 2))),
+        Parent = container,
+    })
+    Create("UIPadding", { PaddingBottom = UDim.new(0, 10), Parent = container })
+
+    local section = setmetatable({
+        tab = self,
+        name = name,
+        header = header,
+        container = container,
+        card = card,
+    }, Section)
+    table.insert(self.sections, section)
+    return section
+end
+
+function Tab:CreateLeftGroupbox(name)  return self:CreateGroupbox("left",  name) end
+function Tab:CreateRightGroupbox(name) return self:CreateGroupbox("right", name) end
+
+-- =========================================================================
 -- Window
 -- =========================================================================
 
 local Window = {}
 Window.__index = Window
 
-function Window:CreateTab(name)
+-- CreateTab(name)  or  CreateTab(name, { Icon = "rbxassetid://..." })
+-- A second string arg is also accepted as the icon, so CreateTab(name, iconId)
+-- works too.
+function Window:CreateTab(name, opts)
     local theme = self.theme
     if self.style then applyStyle(self.style) end
+
+    local iconId
+    if type(opts) == "table" then iconId = opts.Icon
+    elseif type(opts) == "string" then iconId = opts end
 
     local tab = setmetatable({
         window = self,
@@ -1918,6 +2238,31 @@ function Window:CreateTab(name)
     end
     corner(button, 6)
     tab.button = button
+
+    -- Optional tab icon. Sits at the left edge of the button; the label is
+    -- pushed right (via a left padding) so the two don't overlap. For top
+    -- (auto-width) buttons the extra left padding widens the pill to fit the
+    -- icon. The icon tint follows the active/inactive state in SwitchTab.
+    if iconId then
+        local pl = topTabs and 32 or 30
+        local existingPad = button:FindFirstChildOfClass("UIPadding")
+        if existingPad then
+            existingPad.PaddingLeft = UDim.new(0, pl)
+        else
+            Create("UIPadding", { PaddingLeft = UDim.new(0, pl), Parent = button })
+        end
+        if not topTabs then button.Text = name end  -- drop the leading-space inset
+        tab._icon = Create("ImageLabel", {
+            Name = "Icon",
+            Size = UDim2.fromOffset(16, 16),
+            Position = UDim2.new(0, topTabs and 12 or 10, 0.5, -8),
+            BackgroundTransparency = 1,
+            Image = iconId,
+            ImageColor3 = theme.textDim,
+            ZIndex = 2,
+            Parent = button,
+        })
+    end
 
     -- Accent indicator. Left layout: a vertical bar on the row's left edge that
     -- grows from zero height when selected. Top layout: a horizontal underline
@@ -2013,6 +2358,9 @@ function Window:SwitchTab(tab)
             tween(t.indicator,
                 { Size = active and t._indicatorActive or t._indicatorIdle },
                 T_NORMAL)
+        end
+        if t._icon then
+            tween(t._icon, { ImageColor3 = active and theme.accent or theme.textDim }, T_NORMAL)
         end
     end
     self.activeTab = tab
@@ -2123,8 +2471,30 @@ end
 -- CreateWindow — public entry point
 -- =========================================================================
 
+-- Merge a named Preset under an explicit config. Preset fields are the base;
+-- whatever the caller passes alongside `Preset` wins. Theme/Style sub-tables are
+-- deep-merged (so `{Preset="Aurora", Theme={accent=...}}` keeps Aurora's other
+-- colours); all other keys are replaced wholesale. Returns the merged config.
+local function mergePreset(cfg)
+    local preset = cfg.Preset and OvertimeUI.Presets[cfg.Preset]
+    if type(preset) ~= "table" then return cfg end
+    local out = {}
+    for k, v in pairs(preset) do out[k] = v end
+    for k, v in pairs(cfg) do
+        if (k == "Theme" or k == "Style") and type(v) == "table" and type(out[k]) == "table" then
+            local merged = {}
+            for kk, vv in pairs(out[k]) do merged[kk] = vv end
+            for kk, vv in pairs(v)      do merged[kk] = vv end
+            out[k] = merged
+        else
+            out[k] = v
+        end
+    end
+    return out
+end
+
 function OvertimeUI:CreateWindow(cfg)
-    cfg = cfg or {}
+    cfg = mergePreset(cfg or {})
     local name = cfg.Name or "OvertimeUI"
     local markerName = "_OvertimeUI_" .. name:gsub("[^%w]", "_")
 
@@ -2186,6 +2556,11 @@ function OvertimeUI:CreateWindow(cfg)
         local sh = pick(cfg.Shadow, st.shadow); self.style.shadow = (sh ~= false)
         local sn = pick(cfg.Sheen,  st.sheen);  self.style.sheen  = (sn ~= false)
         local sp = pick(cfg.Stripe, st.stripe); self.style.stripe = (sp ~= false)
+
+        -- Depth flags default OFF, so they only turn on when explicitly enabled.
+        self.style.gradientStroke = pick(cfg.GradientStroke, st.gradientStroke) == true
+        self.style.accentGlow     = pick(cfg.AccentGlow,     st.accentGlow)     == true
+        self.style.gradientFill   = pick(cfg.GradientFill,   st.gradientFill)   == true
 
         -- New structural tokens — each falls back to the default in
         -- defaultStyle() when the override is missing or the wrong type.
@@ -2269,8 +2644,9 @@ function OvertimeUI:CreateWindow(cfg)
         Parent = gui,
     })
     corner(panel, 10)
-    stroke(panel, self.theme.border)
+    depthStroke(panel, self.theme.border, self.theme.borderHi)
     if S.sheen then sheen(panel, S.sheenStrength) end
+    depthFill(panel, 0.05)
     self.panel = panel
 
     -- Optional background texture, behind every other panel child. ZIndex 0 so
@@ -2304,6 +2680,10 @@ function OvertimeUI:CreateWindow(cfg)
     -- The ONE shadow in the whole UI: a single soft drop behind the root
     -- window so it lifts off the game world. Spread / faintness are style tokens.
     if S.shadow then shadow(shadowHolder, S.shadowSpread, S.shadowTransparency) end
+    -- Accent glow: a wide, faint accent-tinted halo behind the panel so it reads
+    -- as lit rather than just dropped. Only when accentGlow is on.
+    accentGlowBehind(shadowHolder, self.theme.accentGlow or self.theme.accent,
+        0.72, math.max(S.shadowSpread, 36))
     self._shadowHolder = shadowHolder
 
     -- Entrance: gentle scale-up + fade so the window arrives instead of
@@ -2517,6 +2897,15 @@ function OvertimeUI:CreateWindow(cfg)
         })
         corner(tabBody, 8)
     end
+    -- Depth on the columns: frame them with a gradient edge and lift them with a
+    -- subtle fill gradient. Gated on the flags, so the default columns stay
+    -- borderless and flat exactly as before.
+    if GRAD_STROKE then
+        gradStroke(tabStrip, self.theme.border, self.theme.borderHi)
+        gradStroke(tabBody,  self.theme.border, self.theme.borderHi)
+    end
+    depthFill(tabStrip, 0.06)
+    depthFill(tabBody, 0.06)
     self._tabStrip = tabStrip
     self._tabBody  = tabBody
 

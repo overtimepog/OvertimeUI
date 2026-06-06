@@ -131,6 +131,11 @@ look distinct without forking the library:
 | `panelTransparency` | number | `0` | `0` solid, `~0.1`–`0.3` glass / acrylic |
 | `backgroundImage` | string | — | `rbxassetid://…` texture behind the panel body |
 | `backgroundImageTransparency` | number | `0.85` | How subtle that texture is |
+| **`gradientStroke`** | boolean | `false` | Key borders become a light-catching gradient (the modern depth trick) |
+| **`accentGlow`** | boolean | `false` | Soft accent glow behind the panel + active toggles |
+| **`gradientFill`** | boolean | `false` | Subtle top-lit fill gradient on surfaces |
+
+The three **depth flags** are the single biggest "premium vs basic" lever. They default off (so the stock flat look is unchanged); turn them on — or use a preset that does — to lift the UI out of flatness. Also settable via the top-level shorthand `GradientStroke` / `AccentGlow` / `GradientFill`.
 
 Plus the colour channel:
 
@@ -192,12 +197,44 @@ local Window = UI:CreateWindow({
 
 Each window resolves its own style independently — two differently-styled windows
 can coexist and controls built into either after the fact stay on-style. See
-[`examples/Showcase.lua`](examples/Showcase.lua) for four wildly different menus
+[`examples/Showcase.lua`](examples/Showcase.lua) for several wildly different menus
 built from the same library.
 
-### `Window:CreateTab(name)`
+### Themes and presets
 
-Adds a tab to the left strip. Returns a `Tab` handle. The first tab created becomes active automatically.
+Rather than hand-rolling colours every time, start from a built-in palette or a
+full preset.
+
+**`UI.Themes`** — named colour palettes (`Dark`, `Midnight`, `Aqua`, `Rose`, `Mono`, `Forest`, `Amber`). Each is a partial `Theme` table you can drop straight into `CreateWindow`:
+
+```lua
+local Window = UI:CreateWindow({ Name = "My Script", Theme = UI.Themes.Aqua })
+```
+
+**`UI.Presets`** — finished **theme + structure + depth** bundles. Pass `Preset` and you get a distinct, premium look in one line; anything you pass alongside it overrides the preset (`Theme`/`Style` are deep-merged, everything else replaced):
+
+```lua
+local Window = UI:CreateWindow({ Preset = "Aurora", Name = "My Script" })
+-- start from a preset, override just the accent:
+local Window = UI:CreateWindow({ Preset = "Sleek", Name = "X", Accent = Color3.fromRGB(255, 90, 150) })
+```
+
+Shipped presets:
+
+| preset | look |
+|---|---|
+| `Aurora` | frosted top tab-bar, gradient accent, glow — the modern "premium" look |
+| `Sleek` | Rayfield-style lit sidebar: rounded, gradient framing, accent glow |
+| `Terminal` | dense, sharp, monospaced, no glow |
+| `Compact` | tight cheat-menu palette — pair with two-column groupboxes |
+| `Velvet` | warm, roomy, languid |
+| `Glass` | heavy translucent panel, big glow, gradients everywhere |
+
+### `Window:CreateTab(name [, opts])`
+
+Adds a tab to the strip. Returns a `Tab` handle. The first tab created becomes active automatically.
+
+Pass an optional icon as `opts.Icon` (or a bare string): `Window:CreateTab("Combat", { Icon = "rbxassetid://123" })`. The icon sits left of the label and tints with the active/inactive state.
 
 ### `Window:OnClose(callback)`
 
@@ -209,7 +246,21 @@ Tear down the window immediately. Fires any `OnClose` callbacks, disconnects int
 
 ### `Tab:CreateSection(name)`
 
-Adds a section header + container inside the tab body. Returns a `Section` handle. Sections are visually separated by a small spacer and an uppercase accent-color header.
+Adds a section header + container inside the tab body. Returns a `Section` handle. Sections are visually separated by a small spacer and an uppercase accent-color header. This is the **single-column** layout.
+
+### `Tab:CreateLeftGroupbox(name)` / `Tab:CreateRightGroupbox(name)`
+
+The **two-column** "cheat menu" layout (Linoria-style). Each returns a `Section` handle — every `Section:CreateX` method works inside — rendered as a bordered, titled **card** stacked in the left or right column. The first groupbox call builds the two-column container; stack as many groupboxes per column as you like and they pack densely.
+
+```lua
+local combat = Window:CreateTab("Combat")
+local aim = combat:CreateLeftGroupbox("Aimbot")
+aim:CreateToggle({ Name = "Enabled", CurrentValue = true })
+local esp = combat:CreateRightGroupbox("ESP")
+esp:CreateToggle({ Name = "Boxes", CurrentValue = true })
+```
+
+> Pick **one** layout per tab: either `CreateSection` (single column) **or** groupboxes (two columns). Don't mix them in the same tab.
 
 ### `Section:CreateToggle(config)` → `Toggle` handle
 
