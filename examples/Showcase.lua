@@ -9,7 +9,7 @@
 
 -- Bump this whenever the library changes so a stale raw.githubusercontent CDN
 -- copy (cached up to ~5 min) is obvious instead of looking like a broken build.
-local EXPECTED_VERSION = "0.3.0"
+local EXPECTED_VERSION = "0.3.1"
 
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/overtimepog/OvertimeUI/main/OvertimeUI.lua"))()
 if not UI then warn("[Showcase] Failed to load OvertimeUI"); return end

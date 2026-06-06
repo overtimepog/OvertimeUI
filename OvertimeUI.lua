@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.3.0"
+OvertimeUI._VERSION = "0.3.1"
 
 -- =========================================================================
 -- Services & shared state
@@ -2195,9 +2195,12 @@ function Window:CreateTab(name, opts)
     local topTabs  = (self.style.layout == "top")
     local tabHeight = math.max(20, math.floor(self.style.tabHeight))
 
-    -- Tab strip button. Left layout: full-width row with leading-space inset.
-    -- Top layout: auto-width pill that fills the strip's height and centres its
-    -- label, with horizontal padding so labels don't crowd each other.
+    -- Tab strip button. The label is a separate child TextLabel (not button.Text)
+    -- so an optional icon can sit to its left with a guaranteed gap — relying on
+    -- the button's own text + UIPadding to clear an icon is unreliable. Left
+    -- layout: a full-width row. Top layout: an auto-width pill that fits its
+    -- contents (the label drives the width via AutomaticSize).
+    local leftInset = iconId and 30 or 12   -- where the label starts
     local button
     if topTabs then
         button = Create("TextButton", {
@@ -2206,31 +2209,19 @@ function Window:CreateTab(name, opts)
             BackgroundColor3 = theme.bgAlt,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Text = name,
-            TextColor3 = theme.textDim,
-            Font = FONT_SEMI,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Center,
+            Text = "",
             AutoButtonColor = false,
             LayoutOrder = #self.tabs + 1,
             Parent = self._tabStrip,
         })
-        Create("UIPadding", {
-            PaddingLeft = UDim.new(0, 14),
-            PaddingRight = UDim.new(0, 14),
-            Parent = button,
-        })
+        Create("UIPadding", { PaddingRight = UDim.new(0, 14), Parent = button })
     else
         button = Create("TextButton", {
             Size = UDim2.new(1, -8, 0, tabHeight),
             BackgroundColor3 = theme.bgAlt,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Text = "   " .. name,
-            TextColor3 = theme.textDim,
-            Font = FONT_SEMI,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            Text = "",
             AutoButtonColor = false,
             LayoutOrder = #self.tabs + 1,
             Parent = self._tabStrip,
@@ -2239,23 +2230,29 @@ function Window:CreateTab(name, opts)
     corner(button, 6)
     tab.button = button
 
-    -- Optional tab icon. Sits at the left edge of the button; the label is
-    -- pushed right (via a left padding) so the two don't overlap. For top
-    -- (auto-width) buttons the extra left padding widens the pill to fit the
-    -- icon. The icon tint follows the active/inactive state in SwitchTab.
+    -- The label. AutomaticSize.X in top layout so the pill grows to fit it.
+    local label = Create("TextLabel", {
+        Name = "Label",
+        Size = topTabs and UDim2.new(0, 0, 1, 0) or UDim2.new(1, -(leftInset + 8), 1, 0),
+        AutomaticSize = topTabs and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
+        Position = UDim2.new(0, leftInset, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = theme.textDim,
+        Font = FONT_SEMI,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = button,
+    })
+    tab._label = label
+
+    -- Optional tab icon, left of the label. Tint follows active state (SwitchTab).
     if iconId then
-        local pl = topTabs and 32 or 30
-        local existingPad = button:FindFirstChildOfClass("UIPadding")
-        if existingPad then
-            existingPad.PaddingLeft = UDim.new(0, pl)
-        else
-            Create("UIPadding", { PaddingLeft = UDim.new(0, pl), Parent = button })
-        end
-        if not topTabs then button.Text = name end  -- drop the leading-space inset
         tab._icon = Create("ImageLabel", {
             Name = "Icon",
             Size = UDim2.fromOffset(16, 16),
-            Position = UDim2.new(0, topTabs and 12 or 10, 0.5, -8),
+            Position = UDim2.new(0, 8, 0.5, -8),
             BackgroundTransparency = 1,
             Image = iconId,
             ImageColor3 = theme.textDim,
@@ -2299,11 +2296,13 @@ function Window:CreateTab(name, opts)
 
     button.MouseEnter:Connect(function()
         if self.activeTab == tab then return end
-        tween(button, { BackgroundTransparency = 0.4, TextColor3 = theme.text }, T_FAST)
+        tween(button, { BackgroundTransparency = 0.4 }, T_FAST)
+        tween(label, { TextColor3 = theme.text }, T_FAST)
     end)
     button.MouseLeave:Connect(function()
         if self.activeTab == tab then return end
-        tween(button, { BackgroundTransparency = 1, TextColor3 = theme.textDim }, T_FAST)
+        tween(button, { BackgroundTransparency = 1 }, T_FAST)
+        tween(label, { TextColor3 = theme.textDim }, T_FAST)
     end)
 
     -- Tab body page (ScrollingFrame so overflowing content can scroll)
@@ -2352,8 +2351,10 @@ function Window:SwitchTab(tab)
         tween(t.button, {
             BackgroundTransparency = active and 0 or 1,
             BackgroundColor3 = theme.surface,
-            TextColor3 = active and theme.accent or theme.textDim,
         }, T_NORMAL)
+        if t._label then
+            tween(t._label, { TextColor3 = active and theme.accent or theme.textDim }, T_NORMAL)
+        end
         if t.indicator then
             tween(t.indicator,
                 { Size = active and t._indicatorActive or t._indicatorIdle },
