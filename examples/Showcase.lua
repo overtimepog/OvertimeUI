@@ -10,8 +10,24 @@
 -- because each has a distinct Name, each toggles independently — but this demo
 -- re-runs them together, so a second run clears all four).
 
+-- The library version this showcase was written against. If the version that
+-- actually loads doesn't match, you're almost certainly looking at a stale
+-- raw.githubusercontent CDN copy (cached up to ~5 min) — the new tokens won't
+-- render until it catches up. The check below shouts about that so you don't
+-- waste time wondering why "top" layout / gradients aren't showing.
+local EXPECTED_VERSION = "0.2.0"
+
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/overtimepog/OvertimeUI/main/OvertimeUI.lua"))()
 if not UI then warn("[Showcase] Failed to load OvertimeUI"); return end
+
+local loaded = tostring(UI._VERSION)
+if loaded ~= EXPECTED_VERSION then
+    warn(("[Showcase] Loaded OvertimeUI v%s but this showcase expects v%s — "
+        .. "you're seeing a STALE cached library. Wait a few minutes for the "
+        .. "raw.githubusercontent CDN to refresh, then re-run."):format(loaded, EXPECTED_VERSION))
+else
+    print("[Showcase] OvertimeUI v" .. loaded .. " (matches expected v" .. EXPECTED_VERSION .. ")")
+end
 
 -- Small helper so each window gets a couple of representative controls without
 -- repeating the boilerplate four times.
@@ -99,9 +115,10 @@ populate(UI:CreateWindow({
 -- 4) "Stock" — defaults, for side-by-side comparison. Bottom-right.
 populate(UI:CreateWindow({
     Name     = "Stock",
-    SubTitle = "the defaults",
+    SubTitle = "defaults · v" .. loaded,
     Position = UDim2.new(1, -560, 1, -400),
     Accent   = Color3.fromRGB(96, 165, 255),
 }), Color3.fromRGB(96, 165, 255))
 
-print("[Showcase] Four windows up — same library, four looks. Re-run to clear.")
+print(("[Showcase] Four windows up (OvertimeUI v%s) — same library, four looks. Re-run to clear.")
+    :format(loaded))

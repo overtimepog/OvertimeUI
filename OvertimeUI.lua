@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.1.0"
+OvertimeUI._VERSION = "0.2.0"
 
 -- =========================================================================
 -- Services & shared state
