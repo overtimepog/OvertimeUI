@@ -450,6 +450,49 @@ When the user re-runs the script to toggle it off:
 
 Net result: running the script once creates the window, running it again destroys it. Same behavior as every hand-rolled cheat script on the Roblox exploit ecosystem, but you don't have to write the marker logic yourself.
 
+## Toolkit (`UI.Util`) — build a bespoke UI
+
+The `CreateWindow` API above stamps one house style. When you want a **genuinely custom** menu but don't want to re-implement the fiddly bits (dragging, the HSV colour picker, slider drag, dropdown popups, keybind capture + held-detection, the re-run lifecycle), use the toolkit. You lay out whatever you like; the toolkit hands you the hard parts.
+
+```lua
+local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/overtimepog/OvertimeUI/main/OvertimeUI.lua"))()
+
+-- A managed ScreenGui with the same re-run-to-toggle-off lifecycle as a Window.
+local root = UI.Util.Root({ Name = "MyScript" })
+if not root then return end           -- re-run returned nil → toggled off
+
+-- Build ANY layout you want inside root.gui.
+local panel = UI.Util.Create("Frame", {
+    Size = UDim2.fromOffset(320, 420), Position = UDim2.fromOffset(60, 60),
+    BackgroundColor3 = Color3.fromRGB(18, 18, 26), Parent = root.gui,
+})
+UI.Util.corner(panel, 10)
+UI.Util.gradStroke(panel, Color3.fromRGB(40,40,60), Color3.fromRGB(120,90,255))
+UI.Util.glow(panel, Color3.fromRGB(120,90,255))
+root:Drag(panel)                      -- drag the whole panel
+root:SetToggleKey("RightShift")       -- show/hide
+root:OnClose(function() --[[ cleanup ]] end)
+
+-- Drop real widgets anywhere via a Host (a Section bound to your frame), so
+-- every Section:CreateX works — toggle, slider, dropdown, colorpicker, keybind…
+local sec = root:Host(panel, { Theme = UI.Util.Themes.Aqua })
+sec:CreateToggle({ Name = "Enable", Callback = function(v) end })
+sec:CreateColorPicker({ Name = "Color", Callback = function(c) end })
+```
+
+### `UI.Util` reference
+
+| member | purpose |
+|---|---|
+| `Util.Root(cfg)` | Managed `ScreenGui` + re-run marker (returns `nil` on re-run), `:OnClose`, `:Track`, `:Destroy`, `:Drag(frame[,handle])`, `:SetToggleKey(str)`, `:SetVisible/:Toggle`, `:Host(frame[,opts])`. Build your layout in `root.gui`. |
+| `Util.Host(cfg)` | A synthetic `Section` bound to `cfg.Parent` (any frame). Call any `:CreateX` on it. Opts: `Theme`, `Style`, `Overlay`, `AccentGradient`, `Cleanup`. |
+| `Util.Keybind(parent, cfg)` | Standalone keybind picker. `cfg.Default`, `Callback` (rebind), **`OnPress`** (real hotkey), `:Get/:Set/:IsHeld`. |
+| `Util.Create / corner / stroke / gradStroke / sheen / gradient / accentGradient / shadow / glow / padding / tween` | The visual primitives the library uses internally. |
+| `Util.Themes / Util.Presets / Util.Theme()` | The built-in palettes / preset bundles / a fresh default palette. |
+| `Util.Easing / Util.Fonts` | Shared tween + font tokens. |
+
+Module-level helpers also work standalone: `UI:Notify{...}`, `UI:CreateCircle/Square/Line/Text/Image{...}`, `UI:SetMouseFree(bool)`, `UI:BindKey(str, fn)`.
+
 ## Example
 
 See [`examples/UI.lua`](examples/UI.lua) for a full smoke test that exercises every control.

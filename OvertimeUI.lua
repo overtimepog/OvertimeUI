@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.3.2"
+OvertimeUI._VERSION = "0.4.0"
 
 -- =========================================================================
 -- Services & shared state
@@ -3658,29 +3658,222 @@ function OvertimeUI:CreateWatermark(cfg)
 end
 
 -- =========================================================================
--- Styling kit — exposed so scripts can build custom, on-theme widgets.
+-- Toolkit — OvertimeUI as an importable UI utility library.
 -- =========================================================================
--- OvertimeUI.Theme() returns a fresh copy of the default palette (mutate it
--- freely). OvertimeUI.Util gives the same low-level builders the library
--- uses internally, so a script's custom decorations match the rest of the UI:
+-- The high-level CreateWindow/CreateTab/CreateSection API above stamps one
+-- house style. The toolkit below is the opposite: it hands you the HARD parts
+-- (managed ScreenGui + re-run lifecycle, dragging, the HSV colour picker,
+-- slider drag, dropdown popups, keybind capture + held-detection, notifications,
+-- Drawing shapes) as standalone pieces, so you can lay out a genuinely bespoke
+-- menu and still not re-implement any of the fiddly bits.
 --
---     local U, T = UI.Util, UI.Theme()
---     local box = U.Create("Frame", { Size = UDim2.fromOffset(120, 40), BackgroundColor3 = T.surface })
---     U.corner(box, 6) ; U.stroke(box, T.border, 1) ; U.shadow(box, 16, 0.4)
---     U.tween(box, { BackgroundColor3 = T.accent }, U.Easing.Normal)
+--     local UI = loadstring(game:HttpGet(".../OvertimeUI.lua"))()
+--     local root = UI.Util.Root({ Name = "MyScript" })   -- nil on re-run (toggle off)
+--     if not root then return end
+--     local panel = UI.Util.Create("Frame", { Size = UDim2.fromOffset(300, 400),
+--         BackgroundColor3 = Color3.fromRGB(20,20,28), Parent = root.gui })
+--     root:Drag(panel)                                    -- drag the whole panel
+--     root:SetToggleKey("RightShift")
+--     -- drop real widgets anywhere via a Host bound to any frame:
+--     local sec = root:Host(panel)                        -- or UI.Util.Host{Parent=panel}
+--     sec:CreateToggle({ Name = "Enable", Callback = function(v) ... end })
+--     sec:CreateColorPicker({ Name = "Color", Callback = function(c) ... end })
+--
+-- A Host is a real Section under the hood, so EVERY Section:CreateX method works
+-- (toggle, slider, dropdown, colorpicker, keybind, button, label, paragraph,
+-- input, divider, image, custom) — fully reusing the library's widget code.
+
 OvertimeUI.Theme = function() return defaultTheme() end
+
+-- Walk up to the ScreenGui that hosts an instance (popup/overlay parenting).
+local function ancestorScreenGui(inst)
+    local cur = inst
+    while cur do
+        if typeof(cur) == "Instance" and cur:IsA("ScreenGui") then return cur end
+        cur = cur and cur.Parent
+    end
+    return nil
+end
+
+-- Host: a synthetic Section bound to an arbitrary frame. Lets every Section
+-- widget builder be placed into a bespoke layout. cfg.Parent is required;
+-- cfg.Theme / cfg.Style / cfg.Overlay / cfg.AccentGradient / cfg.Cleanup are
+-- optional (sensible defaults). Returns a Section handle.
+local function makeHost(cfg)
+    cfg = cfg or {}
+    local parent = cfg.Parent
+    assert(typeof(parent) == "Instance", "UI.Util.Host requires a Parent frame")
+    local fakeWindow = {
+        theme           = cfg.Theme or defaultTheme(),
+        style           = cfg.Style or defaultStyle(),
+        _cleanup        = cfg.Cleanup or {},
+        gui             = cfg.Overlay or ancestorScreenGui(parent) or ensureOverlay(),
+        accentGradient  = cfg.AccentGradient,
+    }
+    return setmetatable({
+        tab       = { window = fakeWindow },
+        container = parent,
+        _order    = 0,
+    }, Section)
+end
+
+-- Root: a managed top-level UI host. Owns a ScreenGui + a re-run marker (so
+-- running the script again returns nil and tears the old one down — the same
+-- toggle-off UX as CreateWindow), connection cleanup, dragging and a toggle key.
+-- It does NOT draw any chrome — you build whatever you want inside root.gui.
+local function makeRoot(cfg)
+    cfg = cfg or {}
+    local name = cfg.Name or "OvertimeRoot"
+    local markerName = "_OvertimeRoot_" .. tostring(name):gsub("[^%w]", "_")
+
+    local existing = LP:FindFirstChild(markerName)
+    if existing then existing:Destroy(); return nil end
+
+    local self = { _cleanup = {}, _closeCbs = {}, _destroyed = false }
+
+    local gui = Create("ScreenGui", {
+        Name = "Overtime_" .. tostring(name),
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        IgnoreGuiInset = true,
+        DisplayOrder = cfg.DisplayOrder or 10,
+        Parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui"),
+    })
+    self.gui = gui
+
+    local marker = Instance.new("BoolValue")
+    marker.Name = markerName
+    marker.Parent = LP
+    self.marker = marker
+    marker.Destroying:Connect(function() self:Destroy() end)
+
+    function self:Track(c) table.insert(self._cleanup, c); return c end
+    function self:OnClose(cb) if type(cb) == "function" then table.insert(self._closeCbs, cb) end end
+
+    function self:Destroy()
+        if self._destroyed then return end
+        self._destroyed = true
+        for _, cb in ipairs(self._closeCbs) do pcall(cb) end
+        for _, c in ipairs(self._cleanup) do
+            pcall(function()
+                if typeof(c) == "RBXScriptConnection" then c:Disconnect() else c() end
+            end)
+        end
+        pcall(function() gui:Destroy() end)
+        pcall(function() if marker and marker.Parent then marker:Destroy() end end)
+    end
+
+    -- Drag `frame` by grabbing `handle` (defaults to the frame itself).
+    function self:Drag(frame, handle)
+        handle = handle or frame
+        handle.Active = true
+        local dragging, startInput, startPos
+        handle.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+                    or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = true; startInput = i.Position; startPos = frame.Position
+            end
+        end)
+        handle.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+                    or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+        self:Track(UIS.InputChanged:Connect(function(i)
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+                          or i.UserInputType == Enum.UserInputType.Touch) then
+                local d = i.Position - startInput
+                frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                                           startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            end
+        end))
+    end
+
+    -- Show/hide the whole UI; bind a key to toggle it.
+    function self:SetVisible(v) gui.Enabled = v ~= false end
+    function self:Toggle() gui.Enabled = not gui.Enabled end
+    function self:IsVisible() return gui.Enabled end
+    function self:SetToggleKey(keyStr)
+        if self._toggleConn then self._toggleConn:Disconnect(); self._toggleConn = nil end
+        if not keyStr or keyStr == "" or keyStr == "None" or keyStr == "Unknown" then return end
+        self._toggleConn = UIS.InputBegan:Connect(function(input, gpe)
+            if gpe then return end
+            if inputObjectToKeybind(input) == keyStr then gui.Enabled = not gui.Enabled end
+        end)
+        if not self._toggleTracked then
+            self._toggleTracked = true
+            self:Track(function() if self._toggleConn then self._toggleConn:Disconnect() end end)
+        end
+    end
+
+    -- A Host (synthetic Section) bound to a frame inside this root, sharing the
+    -- root's cleanup + overlay so popups render above and connections are freed.
+    function self:Host(parent, opts)
+        opts = opts or {}
+        opts.Parent  = parent
+        opts.Overlay = opts.Overlay or gui
+        opts.Cleanup = opts.Cleanup or self._cleanup
+        return makeHost(opts)
+    end
+
+    return self
+end
+
+-- Standalone keybind picker placed in `parent`. Adds OnPress (fires when the
+-- bound key is pressed — a real hotkey) on top of the rebind Callback + IsHeld.
+local function makeKeybind(parent, cfg)
+    cfg = cfg or {}
+    local theme = cfg.Theme or defaultTheme()
+    local ctrl = buildKeybindControl(theme, parent,
+        cfg.Default or cfg.CurrentKeybind or "None", cfg.Position, cfg.Size, cfg.Callback)
+    local handle = { button = ctrl.button }
+    function handle:Get()        return ctrl.get() end
+    function handle:Set(v)       ctrl.set(v, true) end
+    function handle:SetSilent(v) ctrl.set(v, false) end
+    function handle:IsHeld()     return ctrl.isHeld() end
+    if type(cfg.OnPress) == "function" then
+        local conn = UIS.InputBegan:Connect(function(input, gpe)
+            if gpe then return end
+            local pressed = inputObjectToKeybind(input)
+            if pressed and pressed == ctrl.get() then task.spawn(cfg.OnPress, pressed) end
+        end)
+        if cfg.Cleanup then table.insert(cfg.Cleanup, conn) end
+        handle._conn = conn
+    end
+    return handle
+end
+
+-- OvertimeUI.Util gives the same low-level builders the library uses
+-- internally, plus the lifecycle/host/drag helpers described above.
 OvertimeUI.Util = {
-    Create   = Create,
-    corner   = corner,
-    stroke   = stroke,
-    sheen    = sheen,
-    gradient = sheen,
-    shadow   = shadow,
-    padding  = padding,
-    tween    = tween,
-    Easing   = { Style = EASE, Direction = EASE_OUT, Spring = SPRING,
-                 Fast = T_FAST, Normal = T_NORMAL, Slow = T_SLOW },
-    Fonts    = { Regular = FONT, Bold = FONT_BOLD, Semi = FONT_SEMI },
+    -- visual primitives
+    Create        = Create,
+    corner        = corner,
+    stroke        = stroke,
+    gradStroke    = gradStroke,
+    sheen         = sheen,
+    gradient      = sheen,
+    accentGradient = applyAccentGradient,
+    shadow        = shadow,
+    glow          = function(parent, color, transparency, spread)
+                        return accentGlowBehind(parent, color, transparency, spread, true)
+                    end,
+    padding       = padding,
+    tween         = tween,
+    keybindLabel  = keybindLabel,
+    isKeybindHeld = isKeybindHeld,
+    Easing        = { Style = EASE, Direction = EASE_OUT, Spring = SPRING,
+                      Fast = T_FAST, Normal = T_NORMAL, Slow = T_SLOW },
+    Fonts         = { Regular = DEFAULT_FONT, Bold = DEFAULT_FONT_BOLD, Semi = DEFAULT_FONT_SEMI },
+    -- palettes / presets
+    Theme         = function() return defaultTheme() end,
+    Themes        = OvertimeUI.Themes,
+    Presets       = OvertimeUI.Presets,
+    -- the hard parts
+    Root          = makeRoot,
+    Host          = makeHost,
+    Keybind       = makeKeybind,
 }
 
 return OvertimeUI
