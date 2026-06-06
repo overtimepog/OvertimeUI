@@ -41,9 +41,51 @@ local UIS        = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LP         = Players.LocalPlayer
 
-local FONT        = Enum.Font.Gotham
-local FONT_BOLD   = Enum.Font.GothamBold
-local FONT_SEMI   = Enum.Font.GothamMedium
+-- Font + structural style are *mutable module state*, not constants. Every
+-- control builder reads these upvalues directly (`Font = FONT`, `corner(x, 6)`),
+-- so reassigning them in applyStyle() — before a window's controls are built —
+-- restyles the whole tree without threading style through every call site.
+-- Lua closures capture the variable, not the value, so the reassignment is
+-- visible to code defined earlier in the file. DEFAULT_* hold the originals so
+-- a window that omits a token falls back cleanly.
+local DEFAULT_FONT      = Enum.Font.Gotham
+local DEFAULT_FONT_BOLD = Enum.Font.GothamBold
+local DEFAULT_FONT_SEMI = Enum.Font.GothamMedium
+
+local FONT        = DEFAULT_FONT
+local FONT_BOLD   = DEFAULT_FONT_BOLD
+local FONT_SEMI   = DEFAULT_FONT_SEMI
+
+-- Roundness is a global multiplier on every corner radius (1 = stock, 0 = sharp
+-- corners, >1 = pillier). Set per-window by applyStyle().
+local ROUNDNESS   = 1
+
+-- Default *structural* style (non-color). Merged from CreateWindow's style
+-- fields; colors live in defaultTheme(). Keeping them apart means a script can
+-- recolor without touching layout, or resize roundness without recoloring.
+local function defaultStyle()
+    return {
+        roundness   = 1,                       -- corner radius multiplier
+        font        = DEFAULT_FONT,            -- body text
+        fontBold    = DEFAULT_FONT_BOLD,       -- titles
+        fontSemi    = DEFAULT_FONT_SEMI,       -- labels / buttons
+        shadow      = true,                    -- soft drop behind the panel
+        sheen       = true,                    -- top-lit gradient on the panel
+        stripe      = true,                    -- accent stripe in the title bar
+    }
+end
+
+-- Push a window's resolved style into the mutable module upvalues so every
+-- control built afterwards picks it up. Idempotent and cheap — safe to call at
+-- the top of each builder so deferred control creation stays on-style even when
+-- two differently-styled windows coexist.
+local function applyStyle(style)
+    if type(style) ~= "table" then return end
+    ROUNDNESS = type(style.roundness) == "number" and math.max(0, style.roundness) or 1
+    FONT      = (typeof(style.font)     == "EnumItem") and style.font     or DEFAULT_FONT
+    FONT_BOLD = (typeof(style.fontBold) == "EnumItem") and style.fontBold or DEFAULT_FONT_BOLD
+    FONT_SEMI = (typeof(style.fontSemi) == "EnumItem") and style.fontSemi or DEFAULT_FONT_SEMI
+end
 
 -- Default theme. Individual windows can override `accent` via the Accent
 -- field in CreateWindow config. Everything else is shared.
@@ -177,7 +219,8 @@ local function Create(class, props)
 end
 
 local function corner(parent, radius)
-    return Create("UICorner", { CornerRadius = UDim.new(0, radius or 6), Parent = parent })
+    local r = math.max(0, math.floor((radius or 6) * ROUNDNESS + 0.5))
+    return Create("UICorner", { CornerRadius = UDim.new(0, r), Parent = parent })
 end
 
 local function stroke(parent, color, thickness)
@@ -1642,6 +1685,12 @@ end
 -- LayoutOrder counter so items show up in the order they were added even
 -- though they share a parent UIListLayout.
 function Section:_next()
+    -- Every control builder calls _next() before it lays anything out, so this
+    -- is the single chokepoint that re-asserts the owning window's style. Keeps
+    -- deferred control creation (and coexisting differently-styled windows)
+    -- on-style without an applyStyle() call in each Create* method.
+    local w = self.tab and self.tab.window
+    if w and w.style then applyStyle(w.style) end
     self._order = (self._order or 0) + 1
     return self._order
 end
@@ -1656,6 +1705,7 @@ Tab.__index = Tab
 function Tab:CreateSection(name)
     local window = self.window
     local theme  = window.theme
+    if window.style then applyStyle(window.style) end
 
     local sectionOrder = self:_next()
 
@@ -1742,6 +1792,7 @@ Window.__index = Window
 
 function Window:CreateTab(name)
     local theme = self.theme
+    if self.style then applyStyle(self.style) end
 
     local tab = setmetatable({
         window = self,
@@ -1982,6 +2033,25 @@ function OvertimeUI:CreateWindow(cfg)
         end
     end
     if typeof(cfg.Accent) == "Color3" then self.theme.accent = cfg.Accent end
+
+    -- Structural style (non-color). Resolve from cfg.Style (a table) and/or the
+    -- top-level shorthand fields, then push it into the module upvalues so this
+    -- window's whole tree builds on-style. Re-asserted by Section:_next().
+    self.style = defaultStyle()
+    do
+        local st = type(cfg.Style) == "table" and cfg.Style or {}
+        local function pick(a, b) if a ~= nil then return a else return b end end
+        self.style.roundness = pick(cfg.Roundness, st.roundness)
+        if type(self.style.roundness) ~= "number" then self.style.roundness = 1 end
+        self.style.font     = pick(cfg.Font,     st.font)     or DEFAULT_FONT
+        self.style.fontBold = pick(cfg.FontBold, st.fontBold) or DEFAULT_FONT_BOLD
+        self.style.fontSemi = pick(cfg.FontSemi, st.fontSemi) or DEFAULT_FONT_SEMI
+        local sh = pick(cfg.Shadow, st.shadow); self.style.shadow = (sh ~= false)
+        local sn = pick(cfg.Sheen,  st.sheen);  self.style.sheen  = (sn ~= false)
+        local sp = pick(cfg.Stripe, st.stripe); self.style.stripe = (sp ~= false)
+    end
+    applyStyle(self.style)
+
     self.tabs              = {}
     self.activeTab         = nil
     self.onCloseCallbacks  = {}
@@ -2029,7 +2099,7 @@ function OvertimeUI:CreateWindow(cfg)
     })
     corner(panel, 10)
     stroke(panel, self.theme.border, 1)
-    sheen(panel, 0.05)
+    if self.style.sheen then sheen(panel, 0.05) end
     self.panel = panel
 
     -- Drop shadow lives in a sibling holder *behind* the panel (a child of
@@ -2046,7 +2116,7 @@ function OvertimeUI:CreateWindow(cfg)
     -- The ONE shadow in the whole UI: a single soft drop behind the root
     -- window so it lifts off the game world. Kept faint (Rayfield-style ~0.65)
     -- — every control-level glow/shadow has been removed for a flat look.
-    shadow(shadowHolder, 30, 0.65)
+    if self.style.shadow then shadow(shadowHolder, 30, 0.65) end
     self._shadowHolder = shadowHolder
 
     -- Entrance: gentle scale-up + fade so the window arrives instead of
@@ -2075,6 +2145,7 @@ function OvertimeUI:CreateWindow(cfg)
         BackgroundColor3 = self.theme.accent,
         BorderSizePixel = 0,
         ZIndex = 3,
+        Visible = self.style.stripe,
         Parent = titleBar,
     })
     corner(accentStripe, 2)

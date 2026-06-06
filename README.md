@@ -75,9 +75,58 @@ Creates the top-level window. Returns a `Window` handle, or `nil` if an existing
 | field | type | default | notes |
 |---|---|---|---|
 | `Name` | string | `"OvertimeUI"` | Used for the title bar text and the marker name |
+| `SubTitle` | string | — | Small dimmed line under the title |
 | `Accent` | `Color3` | sky blue | Per-window accent override |
 | `Size` | `UDim2` | `(0, 520, 0, 360)` | Fixed panel size |
 | `Position` | `UDim2` | centered | Starting position |
+| `Theme` | table | — | **Color** overrides — any subset of theme keys (see below) |
+| `Style` | table | — | **Structural** overrides — roundness / fonts / decorations (see below) |
+| `Roundness` | number | `1` | Shorthand for `Style.roundness` |
+| `Font` / `FontBold` / `FontSemi` | `Enum.Font` | Gotham family | Shorthand for the `Style` font fields |
+| `Shadow` / `Sheen` / `Stripe` | boolean | `true` | Shorthand for the `Style` decoration flags |
+| `FreeMouse` | boolean | `false` | Free the cursor while the menu is visible |
+
+### Per-script visual style
+
+Two override channels keep colour and structure independent, so every script can
+look distinct without forking the library:
+
+**`Theme`** — colour palette. Pass any subset; the rest fall back to the dark default.
+
+| key | role |
+|---|---|
+| `bg` / `bgAlt` | panel base / sidebars + body |
+| `surface` / `surfaceHi` | controls at rest / hover |
+| `border` / `borderHi` | hairlines / focused edges |
+| `accent` / `accentDim` / `accentGlow` | accent + muted fill + glow tint |
+| `text` / `textDim` | primary / secondary text |
+| `danger` | destructive / rebind-in-progress |
+
+**`Style`** — structure (non-colour). Also settable via the top-level shorthand fields.
+
+| key | type | default | effect |
+|---|---|---|---|
+| `roundness` | number | `1` | Corner-radius multiplier (`0` = sharp, `2` = pill-y) |
+| `font` / `fontBold` / `fontSemi` | `Enum.Font` | Gotham family | Body / title / label fonts |
+| `shadow` | boolean | `true` | Soft drop behind the panel |
+| `sheen` | boolean | `true` | Top-lit gradient on the panel |
+| `stripe` | boolean | `true` | Accent stripe in the title bar |
+
+```lua
+-- A sharp, flat, monospaced look — nothing like the rounded default.
+local Window = UI:CreateWindow({
+    Name      = "My Script",
+    Accent    = Color3.fromRGB(235, 60, 120),
+    Theme     = { bg = Color3.fromRGB(14, 14, 18), surface = Color3.fromRGB(28, 28, 34) },
+    Roundness = 0,
+    Font      = Enum.Font.Code,
+    Shadow    = false,
+    Sheen     = false,
+})
+```
+
+Each window resolves its own style independently — two differently-styled windows
+can coexist and controls built into either after the fact stay on-style.
 
 ### `Window:CreateTab(name)`
 
