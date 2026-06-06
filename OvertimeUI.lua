@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.3.1"
+OvertimeUI._VERSION = "0.3.2"
 
 -- =========================================================================
 -- Services & shared state
@@ -507,12 +507,29 @@ local function depthStroke(parent, color, hi, thickness)
     return Create("UIStroke", { Color = color, Thickness = thickness or STROKE, Parent = parent })
 end
 
--- Soft accent-tinted glow behind `parent` (reuses the shadow 9-slice, tinted).
--- Returns the ImageLabel, or nil when ACCENT_GLOW is off so callers can guard
--- on the result. `force` builds the glow regardless of the flag.
+-- Soft accent-tinted glow behind `parent`. A single tinted 9-slice reads as a
+-- hard rectangle outline (straight glowing edges = tacky). Instead we stack a
+-- few copies with growing spread and fading opacity: the overlap makes a smooth
+-- radial-ish bloom whose outer edge melts away, so it looks like ambient light
+-- rather than a glowing box. `transparency`/`spread` set the brightest, tightest
+-- inner layer; outer layers derive from them. Returns the innermost ImageLabel
+-- (or nil when ACCENT_GLOW is off, unless `force`).
 local function accentGlowBehind(parent, color, transparency, spread, force)
     if not (ACCENT_GLOW or force) then return nil end
-    return shadow(parent, spread or 16, transparency or 0.62, color)
+    transparency = transparency or 0.74
+    spread = spread or 26
+    -- {spread multiplier, extra transparency added} — inner→outer.
+    local layers = {
+        { 0.55, 0.00 },
+        { 1.25, 0.10 },
+        { 2.40, 0.17 },
+    }
+    local inner
+    for _, L in ipairs(layers) do
+        local img = shadow(parent, spread * L[1], math.min(1, transparency + L[2]), color)
+        inner = inner or img
+    end
+    return inner
 end
 
 -- Subtle top-lit fill gradient, gated on GRAD_FILL. No-op when off.
@@ -2681,10 +2698,10 @@ function OvertimeUI:CreateWindow(cfg)
     -- The ONE shadow in the whole UI: a single soft drop behind the root
     -- window so it lifts off the game world. Spread / faintness are style tokens.
     if S.shadow then shadow(shadowHolder, S.shadowSpread, S.shadowTransparency) end
-    -- Accent glow: a wide, faint accent-tinted halo behind the panel so it reads
-    -- as lit rather than just dropped. Only when accentGlow is on.
+    -- Accent glow: a wide, faint, layered accent halo behind the panel so it
+    -- reads as ambient light rather than a glowing box. Only when accentGlow is on.
     accentGlowBehind(shadowHolder, self.theme.accentGlow or self.theme.accent,
-        0.72, math.max(S.shadowSpread, 36))
+        0.80, math.max(S.shadowSpread, 34))
     self._shadowHolder = shadowHolder
 
     -- Entrance: gentle scale-up + fade so the window arrives instead of
