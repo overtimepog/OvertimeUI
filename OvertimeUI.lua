@@ -60,18 +60,55 @@ local FONT_SEMI   = DEFAULT_FONT_SEMI
 -- corners, >1 = pillier). Set per-window by applyStyle().
 local ROUNDNESS   = 1
 
+-- Hairline thickness for every UIStroke the library draws (1 = stock). Lets a
+-- script go from a barely-there 1px outline to a chunky 2-3px framed look.
+local DEFAULT_STROKE = 1
+local STROKE         = DEFAULT_STROKE
+
+-- Animation duration multiplier. 1 = stock motion, 0.5 = twice as snappy,
+-- 2 = languid, 0 = instant (no tweens). Applied inside tween() so it scales
+-- every transition in the library at once.
+local DEFAULT_ANIM = 1
+local ANIM         = DEFAULT_ANIM
+
 -- Default *structural* style (non-color). Merged from CreateWindow's style
 -- fields; colors live in defaultTheme(). Keeping them apart means a script can
 -- recolor without touching layout, or resize roundness without recoloring.
+--
+-- The numeric/string layout tokens (layout, titleHeight, tabWidth, ...) are
+-- read straight off the resolved style table by CreateWindow / CreateTab /
+-- CreateSection, which all have a window reference. Only the four tokens used
+-- by the global primitive helpers (corner/stroke/tween, which have no window
+-- context) are mirrored into module upvalues by applyStyle(): roundness, the
+-- three fonts, stroke thickness, and animation speed.
 local function defaultStyle()
     return {
+        -- corner / fonts / stroke / motion (mirrored into upvalues) ----------
         roundness   = 1,                       -- corner radius multiplier
         font        = DEFAULT_FONT,            -- body text
         fontBold    = DEFAULT_FONT_BOLD,       -- titles
         fontSemi    = DEFAULT_FONT_SEMI,       -- labels / buttons
+        strokeThickness = 1,                   -- UIStroke hairline thickness
+        animation   = 1,                       -- tween duration multiplier (0 = instant)
+        -- panel decorations --------------------------------------------------
         shadow      = true,                    -- soft drop behind the panel
         sheen       = true,                    -- top-lit gradient on the panel
         stripe      = true,                    -- accent stripe in the title bar
+        sheenStrength      = 0.05,             -- how pronounced the panel sheen is
+        shadowSpread       = 30,               -- how far the drop shadow bleeds out
+        shadowTransparency = 0.65,             -- how faint the drop shadow is
+        panelTransparency  = 0,                -- 0 = solid, ~0.1-0.3 = glass/acrylic
+        backgroundImage             = nil,     -- optional texture behind the panel body
+        backgroundImageTransparency = 0.85,    -- how subtle that texture is
+        -- layout / structure -------------------------------------------------
+        layout      = "left",                  -- "left" sidebar tabs | "top" tab bar
+        titleHeight = 36,                      -- title-bar height in px
+        titleAlign  = "left",                  -- "left" | "center" title text
+        titleIcon   = nil,                     -- optional rbxassetid:// logo by the title
+        tabWidth    = 120,                     -- sidebar width (left layout only)
+        tabHeight   = 30,                      -- per-tab button height
+        bodyPadding = 12,                      -- inner padding of each tab page
+        spacing     = 2,                       -- vertical gap between control rows
     }
 end
 
@@ -85,6 +122,8 @@ local function applyStyle(style)
     FONT      = (typeof(style.font)     == "EnumItem") and style.font     or DEFAULT_FONT
     FONT_BOLD = (typeof(style.fontBold) == "EnumItem") and style.fontBold or DEFAULT_FONT_BOLD
     FONT_SEMI = (typeof(style.fontSemi) == "EnumItem") and style.fontSemi or DEFAULT_FONT_SEMI
+    STROKE    = type(style.strokeThickness) == "number" and math.max(0, style.strokeThickness) or DEFAULT_STROKE
+    ANIM      = type(style.animation) == "number" and math.max(0, style.animation) or DEFAULT_ANIM
 end
 
 -- Default theme. Individual windows can override `accent` via the Accent
@@ -224,15 +263,47 @@ local function corner(parent, radius)
 end
 
 local function stroke(parent, color, thickness)
-    return Create("UIStroke", { Color = color, Thickness = thickness or 1, Parent = parent })
+    return Create("UIStroke", { Color = color, Thickness = thickness or STROKE, Parent = parent })
 end
 
 -- Fire-and-forget tween. Returns the Tween so callers can hook .Completed.
+-- Duration is scaled by the window's `animation` token (ANIM upvalue) so one
+-- style field speeds up or slows down every transition. At ANIM == 0 the tween
+-- still runs but with a near-zero duration so .Completed fires next frame and
+-- callers that chain off it keep working.
 local function tween(inst, props, time, style, dir)
-    local info = TweenInfo.new(time or T_NORMAL, style or EASE, dir or EASE_OUT)
+    local dur = (time or T_NORMAL) * ANIM
+    local info = TweenInfo.new(dur, style or EASE, dir or EASE_OUT)
     local tw = TweenService:Create(inst, info, props)
     tw:Play()
     return tw
+end
+
+-- Apply an accent gradient to a frame's fill. `spec` is whatever the window
+-- resolved for `accentGradient`: a ColorSequence, or a {Color3, Color3,...}
+-- list we wrap into one. Returns the UIGradient (or nil if spec is unusable)
+-- so callers can keep a reference. Used on the title stripe, tab indicators,
+-- and section ticks so an accent can be a sweep instead of one flat colour.
+local function applyAccentGradient(frame, spec, rotation)
+    if not spec then return nil end
+    local seq
+    if typeof(spec) == "ColorSequence" then
+        seq = spec
+    elseif type(spec) == "table" then
+        local kp = {}
+        local n = #spec
+        if n == 1 then
+            kp[1] = ColorSequenceKeypoint.new(0, spec[1])
+            kp[2] = ColorSequenceKeypoint.new(1, spec[1])
+        elseif n >= 2 then
+            for i = 1, n do
+                kp[i] = ColorSequenceKeypoint.new((i - 1) / (n - 1), spec[i])
+            end
+        end
+        if #kp >= 2 then seq = ColorSequence.new(kp) end
+    end
+    if not seq then return nil end
+    return Create("UIGradient", { Color = seq, Rotation = rotation or 0, Parent = frame })
 end
 
 -- Vertical sheen: a subtle top-lighter / bottom-darker gradient that gives
@@ -1740,6 +1811,7 @@ function Tab:CreateSection(name)
         Parent = headerRow,
     })
     corner(tick, 2)
+    applyAccentGradient(tick, window.accentGradient, 90)
     local header = Create("TextLabel", {
         Size = UDim2.new(1, -12, 1, 0),
         Position = UDim2.new(0, 12, 0, 0),
@@ -1763,7 +1835,7 @@ function Tab:CreateSection(name)
     })
     Create("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 2),
+        Padding = UDim.new(0, math.max(0, math.floor((window.style and window.style.spacing) or 2))),
         Parent = container,
     })
 
@@ -1800,35 +1872,84 @@ function Window:CreateTab(name)
         sections = {},
     }, Tab)
 
-    -- Tab strip button
-    local button = Create("TextButton", {
-        Size = UDim2.new(1, -8, 0, 30),
-        BackgroundColor3 = theme.bgAlt,
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        Text = "   " .. name,
-        TextColor3 = theme.textDim,
-        Font = FONT_SEMI,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        AutoButtonColor = false,
-        LayoutOrder = #self.tabs + 1,
-        Parent = self._tabStrip,
-    })
+    local topTabs  = (self.style.layout == "top")
+    local tabHeight = math.max(20, math.floor(self.style.tabHeight))
+
+    -- Tab strip button. Left layout: full-width row with leading-space inset.
+    -- Top layout: auto-width pill that fills the strip's height and centres its
+    -- label, with horizontal padding so labels don't crowd each other.
+    local button
+    if topTabs then
+        button = Create("TextButton", {
+            Size = UDim2.new(0, 0, 1, 0),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundColor3 = theme.bgAlt,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Text = name,
+            TextColor3 = theme.textDim,
+            Font = FONT_SEMI,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            AutoButtonColor = false,
+            LayoutOrder = #self.tabs + 1,
+            Parent = self._tabStrip,
+        })
+        Create("UIPadding", {
+            PaddingLeft = UDim.new(0, 14),
+            PaddingRight = UDim.new(0, 14),
+            Parent = button,
+        })
+    else
+        button = Create("TextButton", {
+            Size = UDim2.new(1, -8, 0, tabHeight),
+            BackgroundColor3 = theme.bgAlt,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Text = "   " .. name,
+            TextColor3 = theme.textDim,
+            Font = FONT_SEMI,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            AutoButtonColor = false,
+            LayoutOrder = #self.tabs + 1,
+            Parent = self._tabStrip,
+        })
+    end
     corner(button, 6)
     tab.button = button
 
-    -- Left-edge accent indicator. Collapsed to zero height when the tab is
-    -- inactive; springs to full height when selected.
-    local indicator = Create("Frame", {
-        Size = UDim2.new(0, 3, 0, 0),
-        Position = UDim2.new(0, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = theme.accent,
-        BorderSizePixel = 0,
-        Parent = button,
-    })
+    -- Accent indicator. Left layout: a vertical bar on the row's left edge that
+    -- grows from zero height when selected. Top layout: a horizontal underline
+    -- that grows from zero width. Active/idle target sizes are stashed on the
+    -- tab so SwitchTab can animate to the right orientation.
+    local indicator
+    if topTabs then
+        indicator = Create("Frame", {
+            Size = UDim2.new(0, 0, 0, 2),
+            Position = UDim2.new(0.5, 0, 1, -1),
+            AnchorPoint = Vector2.new(0.5, 1),
+            BackgroundColor3 = theme.accent,
+            BorderSizePixel = 0,
+            Parent = button,
+        })
+        tab._indicatorActive = UDim2.new(1, -10, 0, 2)
+        tab._indicatorIdle   = UDim2.new(0, 0, 0, 2)
+    else
+        local indH = math.clamp(math.floor(tabHeight * 0.53), 8, tabHeight)
+        indicator = Create("Frame", {
+            Size = UDim2.new(0, 3, 0, 0),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = theme.accent,
+            BorderSizePixel = 0,
+            Parent = button,
+        })
+        tab._indicatorActive = UDim2.new(0, 3, 0, indH)
+        tab._indicatorIdle   = UDim2.new(0, 3, 0, 0)
+    end
     corner(indicator, 2)
+    applyAccentGradient(indicator, self.accentGradient, topTabs and 0 or 90)
     tab.indicator = indicator
 
     button.MouseEnter:Connect(function()
@@ -1852,16 +1973,17 @@ function Window:CreateTab(name)
         Visible = false,
         Parent = self._tabBody,
     })
+    local bp = math.max(0, math.floor(self.style.bodyPadding))
     Create("UIPadding", {
-        PaddingTop = UDim.new(0, 8),
-        PaddingBottom = UDim.new(0, 12),
-        PaddingLeft = UDim.new(0, 12),
-        PaddingRight = UDim.new(0, 16),
+        PaddingTop = UDim.new(0, math.max(4, bp - 4)),
+        PaddingBottom = UDim.new(0, bp),
+        PaddingLeft = UDim.new(0, bp),
+        PaddingRight = UDim.new(0, bp + 4),
         Parent = page,
     })
     Create("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 2),
+        Padding = UDim.new(0, math.max(0, math.floor(self.style.spacing))),
         Parent = page,
     })
     tab.page = page
@@ -1889,7 +2011,7 @@ function Window:SwitchTab(tab)
         }, T_NORMAL)
         if t.indicator then
             tween(t.indicator,
-                { Size = UDim2.new(0, 3, 0, active and 16 or 0) },
+                { Size = active and t._indicatorActive or t._indicatorIdle },
                 T_NORMAL)
         end
     end
@@ -1916,11 +2038,9 @@ function Window:SetVisible(state)
 
     if state then
         self.gui.Enabled = true
-        if self._freeMouse then OvertimeUI:SetMouseFree(true) end
         tween(self._scale, { Scale = 1 }, T_NORMAL, SPRING)
-        tween(self.panel, { BackgroundTransparency = 0 }, T_NORMAL)
+        tween(self.panel, { BackgroundTransparency = self._panelT or 0 }, T_NORMAL)
     else
-        if self._freeMouse then OvertimeUI:SetMouseFree(false) end
         tween(self._scale, { Scale = 0.92 }, T_FAST)
         local tw = tween(self.panel, { BackgroundTransparency = 1 }, T_FAST)
         -- Disable the ScreenGui only once the fade-out has finished, and
@@ -1984,9 +2104,6 @@ function Window:GetToggleKey() return self._toggleKey or "None" end
 function Window:Destroy()
     if self._destroyed then return end
     self._destroyed = true
-    if self._freeMouse then
-        pcall(function() OvertimeUI:SetMouseFree(false) end)
-    end
     for _, cb in ipairs(self.onCloseCallbacks) do
         local ok, err = pcall(cb)
         if not ok then warn("[OvertimeUI] OnClose callback error: " .. tostring(err)) end
@@ -2034,6 +2151,19 @@ function OvertimeUI:CreateWindow(cfg)
     end
     if typeof(cfg.Accent) == "Color3" then self.theme.accent = cfg.Accent end
 
+    -- Accent gradient (optional). When set, the title stripe, tab indicators,
+    -- and section ticks become a colour sweep instead of one flat accent.
+    -- Accepts a ColorSequence or a {Color3, Color3, ...} list. Not a Color3, so
+    -- it can't ride in the Theme table — it lives on the window and is read by
+    -- the structural builders via applyAccentGradient().
+    do
+        local g = cfg.AccentGradient
+        if g == nil and type(cfg.Theme) == "table" then g = cfg.Theme.accentGradient end
+        if typeof(g) == "ColorSequence" or type(g) == "table" then
+            self.accentGradient = g
+        end
+    end
+
     -- Structural style (non-color). Resolve from cfg.Style (a table) and/or the
     -- top-level shorthand fields, then push it into the module upvalues so this
     -- window's whole tree builds on-style. Re-asserted by Section:_next().
@@ -2041,6 +2171,13 @@ function OvertimeUI:CreateWindow(cfg)
     do
         local st = type(cfg.Style) == "table" and cfg.Style or {}
         local function pick(a, b) if a ~= nil then return a else return b end end
+        -- numbers: take the override only if it's actually a number, else keep
+        -- the default already sitting in self.style.
+        local function num(a, b)
+            local v = pick(a, b)
+            if type(v) == "number" then return v end
+            return nil
+        end
         self.style.roundness = pick(cfg.Roundness, st.roundness)
         if type(self.style.roundness) ~= "number" then self.style.roundness = 1 end
         self.style.font     = pick(cfg.Font,     st.font)     or DEFAULT_FONT
@@ -2049,6 +2186,33 @@ function OvertimeUI:CreateWindow(cfg)
         local sh = pick(cfg.Shadow, st.shadow); self.style.shadow = (sh ~= false)
         local sn = pick(cfg.Sheen,  st.sheen);  self.style.sheen  = (sn ~= false)
         local sp = pick(cfg.Stripe, st.stripe); self.style.stripe = (sp ~= false)
+
+        -- New structural tokens — each falls back to the default in
+        -- defaultStyle() when the override is missing or the wrong type.
+        self.style.strokeThickness    = num(cfg.StrokeThickness, st.strokeThickness) or self.style.strokeThickness
+        self.style.animation          = num(cfg.Animation,       st.animation)       or self.style.animation
+        self.style.sheenStrength      = num(nil,                 st.sheenStrength)     or self.style.sheenStrength
+        self.style.shadowSpread       = num(nil,                 st.shadowSpread)      or self.style.shadowSpread
+        self.style.shadowTransparency = num(nil,                 st.shadowTransparency) or self.style.shadowTransparency
+        self.style.panelTransparency  = num(cfg.PanelTransparency, st.panelTransparency) or self.style.panelTransparency
+        self.style.titleHeight        = num(cfg.TitleHeight,     st.titleHeight)       or self.style.titleHeight
+        self.style.tabWidth           = num(cfg.TabWidth,        st.tabWidth)          or self.style.tabWidth
+        self.style.tabHeight          = num(cfg.TabHeight,       st.tabHeight)         or self.style.tabHeight
+        self.style.bodyPadding        = num(cfg.BodyPadding,     st.bodyPadding)       or self.style.bodyPadding
+        self.style.spacing            = num(cfg.Spacing,         st.spacing)           or self.style.spacing
+
+        local layout = pick(cfg.Layout, st.layout)
+        if layout == "top" or layout == "left" then self.style.layout = layout end
+        local talign = pick(cfg.TitleAlign, st.titleAlign)
+        if talign == "center" or talign == "left" then self.style.titleAlign = talign end
+
+        local ti = pick(cfg.TitleIcon, st.titleIcon)
+        if type(ti) == "string" then self.style.titleIcon = ti end
+        local bg = pick(cfg.BackgroundImage, st.backgroundImage)
+        if type(bg) == "string" then self.style.backgroundImage = bg end
+        self.style.backgroundImageTransparency =
+            num(cfg.BackgroundImageTransparency, st.backgroundImageTransparency)
+            or self.style.backgroundImageTransparency
     end
     applyStyle(self.style)
 
@@ -2057,10 +2221,6 @@ function OvertimeUI:CreateWindow(cfg)
     self.onCloseCallbacks  = {}
     self._cleanup          = {}
     self._destroyed        = false
-    -- When true, showing the menu frees the cursor and hiding it releases
-    -- the cursor back to the game (see :SetVisible / :SetMouseFree).
-    self._freeMouse        = cfg.FreeMouse == true
-    if self._freeMouse then OvertimeUI:SetMouseFree(true) end
 
     -- Marker — owned by the library. The script never needs to touch it.
     local marker = Instance.new("BoolValue")
@@ -2082,6 +2242,17 @@ function OvertimeUI:CreateWindow(cfg)
     })
     self.gui = gui
 
+    -- Resolved structural style — pulled into locals so the construction below
+    -- reads off the window's tokens instead of magic numbers. Defaults in
+    -- defaultStyle() reproduce the original fixed look exactly.
+    local S        = self.style
+    local titleH   = math.max(20, math.floor(S.titleHeight))
+    local panelT   = math.clamp(S.panelTransparency or 0, 0, 1)
+    local topTabs  = (S.layout == "top")
+    local tabW     = math.max(48, math.floor(S.tabWidth))
+    local topStripH = math.max(24, math.floor(S.tabHeight) + 8) -- top-layout strip height
+    local GAP      = 8
+
     -- Fixed-size draggable panel.
     local size = (typeof(cfg.Size) == "UDim2") and cfg.Size or UDim2.fromOffset(520, 360)
     local pos  = (typeof(cfg.Position) == "UDim2") and cfg.Position
@@ -2098,9 +2269,26 @@ function OvertimeUI:CreateWindow(cfg)
         Parent = gui,
     })
     corner(panel, 10)
-    stroke(panel, self.theme.border, 1)
-    if self.style.sheen then sheen(panel, 0.05) end
+    stroke(panel, self.theme.border)
+    if S.sheen then sheen(panel, S.sheenStrength) end
     self.panel = panel
+
+    -- Optional background texture, behind every other panel child. ZIndex 0 so
+    -- it sits under the title bar (ZIndex 3) and content (default 1). Clipped to
+    -- the panel's rounded corners by a matching UICorner.
+    if S.backgroundImage then
+        local bgImg = Create("ImageLabel", {
+            Name = "Background",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Image = S.backgroundImage,
+            ImageTransparency = math.clamp(S.backgroundImageTransparency or 0.85, 0, 1),
+            ScaleType = Enum.ScaleType.Crop,
+            ZIndex = 0,
+            Parent = panel,
+        })
+        corner(bgImg, 10)
+    end
 
     -- Drop shadow lives in a sibling holder *behind* the panel (a child of
     -- the panel would render in front of its fill). The holder mirrors the
@@ -2114,72 +2302,98 @@ function OvertimeUI:CreateWindow(cfg)
         Parent = gui,
     })
     -- The ONE shadow in the whole UI: a single soft drop behind the root
-    -- window so it lifts off the game world. Kept faint (Rayfield-style ~0.65)
-    -- — every control-level glow/shadow has been removed for a flat look.
-    if self.style.shadow then shadow(shadowHolder, 30, 0.65) end
+    -- window so it lifts off the game world. Spread / faintness are style tokens.
+    if S.shadow then shadow(shadowHolder, S.shadowSpread, S.shadowTransparency) end
     self._shadowHolder = shadowHolder
 
     -- Entrance: gentle scale-up + fade so the window arrives instead of
     -- popping. UIScale keeps the centre anchored and is reused by
-    -- Show/Hide so visibility toggles animate the same way.
+    -- Show/Hide so visibility toggles animate the same way. The rest-state
+    -- transparency is panelT (so glass panels stay glassy after the fade-in).
     local entrance = Create("UIScale", { Scale = 0.92, Parent = panel })
     self._scale = entrance
     self._visible = true
+    self._panelT = panelT
     panel.BackgroundTransparency = 1
     tween(entrance, { Scale = 1 }, T_SLOW, SPRING)
-    tween(panel, { BackgroundTransparency = 0 }, T_SLOW)
+    tween(panel, { BackgroundTransparency = panelT }, T_SLOW)
 
     -- Title bar. Active = true so InputBegan fires on this Frame when
     -- the user clicks it (Frames with Active = false pass clicks through).
     local titleBar = Create("Frame", {
         Name = "TitleBar",
-        Size = UDim2.new(1, 0, 0, 36),
+        Size = UDim2.new(1, 0, 0, titleH),
         BackgroundTransparency = 1,
         Active = true,
+        ZIndex = 3,
         Parent = panel,
     })
 
-    local accentStripe = Create("Frame", {
-        Size = UDim2.fromOffset(4, 18),
-        Position = UDim2.new(0, 12, 0.5, -9),
-        BackgroundColor3 = self.theme.accent,
-        BorderSizePixel = 0,
-        ZIndex = 3,
-        Visible = self.style.stripe,
-        Parent = titleBar,
-    })
-    corner(accentStripe, 2)
+    -- A title icon (logo) takes the place of the accent stripe when present.
+    local textLeft = 24
+    if S.titleIcon then
+        local iconSz = math.min(titleH - 10, 22)
+        Create("ImageLabel", {
+            Size = UDim2.fromOffset(iconSz, iconSz),
+            Position = UDim2.new(0, 12, 0.5, -math.floor(iconSz / 2)),
+            BackgroundTransparency = 1,
+            Image = S.titleIcon,
+            ZIndex = 3,
+            Parent = titleBar,
+        })
+        textLeft = 12 + iconSz + 8
+    else
+        local stripeH = math.max(10, math.floor(titleH * 0.5))
+        local accentStripe = Create("Frame", {
+            Size = UDim2.fromOffset(4, stripeH),
+            Position = UDim2.new(0, 12, 0.5, -math.floor(stripeH / 2)),
+            BackgroundColor3 = self.theme.accent,
+            BorderSizePixel = 0,
+            ZIndex = 3,
+            Visible = S.stripe,
+            Parent = titleBar,
+        })
+        corner(accentStripe, 2)
+        applyAccentGradient(accentStripe, self.accentGradient, 90)
+    end
 
+    local centered = (S.titleAlign == "center")
+    local titleXAlign = centered and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
+    local titleX = centered and 0 or textLeft
+    local titleWidth = centered and 0 or -(textLeft + 76)
     Create("TextLabel", {
-        Size = UDim2.new(1, -120, 0, cfg.SubTitle and 16 or 36),
-        Position = UDim2.new(0, 24, 0, cfg.SubTitle and 4 or 0),
+        Size = UDim2.new(1, titleWidth, 0, cfg.SubTitle and math.floor(titleH * 0.5) or titleH),
+        Position = UDim2.new(0, titleX, 0, cfg.SubTitle and math.floor(titleH * 0.12) or 0),
         BackgroundTransparency = 1,
         Text = name,
         TextColor3 = self.theme.text,
         Font = FONT_BOLD,
         TextSize = 15,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = titleXAlign,
         TextYAlignment = cfg.SubTitle and Enum.TextYAlignment.Bottom or Enum.TextYAlignment.Center,
+        ZIndex = 3,
         Parent = titleBar,
     })
     if cfg.SubTitle then
         Create("TextLabel", {
-            Size = UDim2.new(1, -120, 0, 12),
-            Position = UDim2.new(0, 24, 0, 20),
+            Size = UDim2.new(1, titleWidth, 0, math.floor(titleH * 0.34)),
+            Position = UDim2.new(0, titleX, 0, math.floor(titleH * 0.56)),
             BackgroundTransparency = 1,
             Text = tostring(cfg.SubTitle),
             TextColor3 = self.theme.textDim,
             Font = FONT,
             TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            TextXAlignment = titleXAlign,
+            ZIndex = 3,
             Parent = titleBar,
         })
     end
 
+    local btnY = math.max(0, math.floor((titleH - 24) / 2))
     local function makeIconBtn(icon, color, xOffset)
         local b = Create("TextButton", {
             Size = UDim2.fromOffset(24, 24),
-            Position = UDim2.new(1, xOffset, 0, 6),
+            Position = UDim2.new(1, xOffset, 0, btnY),
             BackgroundColor3 = self.theme.surface,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -2188,7 +2402,7 @@ function OvertimeUI:CreateWindow(cfg)
             Font = FONT_BOLD,
             TextSize = 15,
             AutoButtonColor = false,
-            ZIndex = 3,
+            ZIndex = 4,
             Parent = titleBar,
         })
         corner(b, 6)
@@ -2210,7 +2424,7 @@ function OvertimeUI:CreateWindow(cfg)
     -- Title separator — a 1px line that fades toward both ends.
     local sep = Create("Frame", {
         Size = UDim2.new(1, -24, 0, 1),
-        Position = UDim2.new(0, 12, 0, 37),
+        Position = UDim2.new(0, 12, 0, titleH + 1),
         BackgroundColor3 = self.theme.borderHi,
         BorderSizePixel = 0,
         ZIndex = 3,
@@ -2226,60 +2440,98 @@ function OvertimeUI:CreateWindow(cfg)
         Parent = sep,
     })
 
-    -- Content container: horizontal split (tab strip | tab body)
+    -- Content container sits below the title bar. The tab strip / tab body split
+    -- inside it is horizontal (sidebar) for "left" layout or vertical (top bar)
+    -- for "top" layout.
     local content = Create("Frame", {
         Name = "Content",
-        Size = UDim2.new(1, -16, 1, -48),
-        Position = UDim2.new(0, 8, 0, 40),
+        Size = UDim2.new(1, -16, 1, -(titleH + 12)),
+        Position = UDim2.new(0, 8, 0, titleH + 4),
         BackgroundTransparency = 1,
         Parent = panel,
     })
     self.content = content
 
-    local tabStrip = Create("Frame", {
-        Name = "TabStrip",
-        Size = UDim2.new(0, 120, 1, 0),
-        BackgroundColor3 = self.theme.bgAlt,
-        BorderSizePixel = 0,
-        Parent = content,
-    })
-    corner(tabStrip, 8)
-    Create("UIListLayout", {
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 4),
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        Parent = tabStrip,
-    })
-    Create("UIPadding", {
-        PaddingTop = UDim.new(0, 8),
-        PaddingBottom = UDim.new(0, 8),
-        Parent = tabStrip,
-    })
-    self._tabStrip = tabStrip
+    local tabStrip, tabBody
+    if topTabs then
+        -- Horizontal tab bar across the top of the content area.
+        tabStrip = Create("Frame", {
+            Name = "TabStrip",
+            Size = UDim2.new(1, 0, 0, topStripH),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabStrip, 8)
+        Create("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 4),
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Parent = tabStrip,
+        })
+        Create("UIPadding", {
+            PaddingLeft = UDim.new(0, 6),
+            PaddingRight = UDim.new(0, 6),
+            Parent = tabStrip,
+        })
 
-    local tabBody = Create("Frame", {
-        Name = "TabBody",
-        Size = UDim2.new(1, -128, 1, 0),
-        Position = UDim2.new(0, 128, 0, 0),
-        BackgroundColor3 = self.theme.bgAlt,
-        BorderSizePixel = 0,
-        Parent = content,
-    })
-    corner(tabBody, 8)
-    self._tabBody = tabBody
+        tabBody = Create("Frame", {
+            Name = "TabBody",
+            Size = UDim2.new(1, 0, 1, -(topStripH + GAP)),
+            Position = UDim2.new(0, 0, 0, topStripH + GAP),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabBody, 8)
+    else
+        -- Vertical sidebar of tabs on the left.
+        tabStrip = Create("Frame", {
+            Name = "TabStrip",
+            Size = UDim2.new(0, tabW, 1, 0),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabStrip, 8)
+        Create("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 4),
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            Parent = tabStrip,
+        })
+        Create("UIPadding", {
+            PaddingTop = UDim.new(0, 8),
+            PaddingBottom = UDim.new(0, 8),
+            Parent = tabStrip,
+        })
+
+        tabBody = Create("Frame", {
+            Name = "TabBody",
+            Size = UDim2.new(1, -(tabW + GAP), 1, 0),
+            Position = UDim2.new(0, tabW + GAP, 0, 0),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabBody, 8)
+    end
+    self._tabStrip = tabStrip
+    self._tabBody  = tabBody
 
     -- Minimize behavior: collapse everything below the title bar.
     local minimized = false
     local fullSize = size
     minBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
-        local target = minimized and UDim2.fromOffset(fullSize.X.Offset, 36) or fullSize
+        local target = minimized and UDim2.fromOffset(fullSize.X.Offset, titleH) or fullSize
         if minimized then content.Visible = false end
         tween(panel, { Size = target }, T_NORMAL)
         tween(shadowHolder, { Size = target }, T_NORMAL)
         minBtn.Text = minimized and "+" or "–"
         if not minimized then
-            task.delay(T_NORMAL * 0.5, function()
+            task.delay(T_NORMAL * 0.5 * math.max(ANIM, 0.01), function()
                 if not minimized then content.Visible = true end
             end)
         end
@@ -2520,10 +2772,12 @@ end
 -- asserting: plenty of games only set their lock once (not every frame), so
 -- merely disconnecting would leave the cursor free forever and you could
 -- never swap back to playing. So on free we snapshot the game's mouse state
--- and on release we restore it — falling back to LockCenter + hidden icon if
--- the snapshot was itself a free state, so a first-person game always
--- returns to locked play. The state is process-global (the mouse is shared);
--- idempotent and safe to call repeatedly.
+-- and on release we restore EXACTLY that snapshot — including a free/Default
+-- state. A game that already had a free cursor gets its free cursor back; a
+-- first-person game that had LockCenter gets locked play back. (Earlier this
+-- force-LockCenter'd whenever the snapshot looked free, which wrongly locked
+-- games that are meant to be played with a free mouse.) The state is
+-- process-global (the mouse is shared); idempotent and safe to call repeatedly.
 
 local mouseFreeConn
 local mouseSavedBehavior, mouseSavedIcon
@@ -2545,22 +2799,14 @@ function OvertimeUI:SetMouseFree(state)
     elseif mouseFreeConn then
         mouseFreeConn:Disconnect()
         mouseFreeConn = nil
-        -- Re-lock to whatever the game had when we freed it. If that snapshot
-        -- was itself a free/Default state (or unknown) it's unreliable — the
-        -- captured icon would be "visible" too — so use the locked-play
-        -- default (LockCenter + hidden cursor) instead of faithfully
-        -- restoring a loose state.
-        local behavior = mouseSavedBehavior
-        local icon     = mouseSavedIcon
-        if behavior == nil or behavior == Enum.MouseBehavior.Default then
-            behavior = Enum.MouseBehavior.LockCenter
-            icon     = false
+        -- Restore exactly what the game had when we freed it. If the snapshot
+        -- was a free state, the game stays free — never force a lock the game
+        -- didn't ask for.
+        if mouseSavedBehavior ~= nil then
+            UIS.MouseBehavior = mouseSavedBehavior
         end
-        UIS.MouseBehavior = behavior
-        if icon ~= nil then
-            UIS.MouseIconEnabled = icon
-        else
-            UIS.MouseIconEnabled = false
+        if mouseSavedIcon ~= nil then
+            UIS.MouseIconEnabled = mouseSavedIcon
         end
         mouseSavedBehavior, mouseSavedIcon = nil, nil
     end

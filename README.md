@@ -84,7 +84,12 @@ Creates the top-level window. Returns a `Window` handle, or `nil` if an existing
 | `Roundness` | number | `1` | Shorthand for `Style.roundness` |
 | `Font` / `FontBold` / `FontSemi` | `Enum.Font` | Gotham family | Shorthand for the `Style` font fields |
 | `Shadow` / `Sheen` / `Stripe` | boolean | `true` | Shorthand for the `Style` decoration flags |
-| `FreeMouse` | boolean | `false` | Free the cursor while the menu is visible |
+| `Layout` | string | `"left"` | Shorthand for `Style.layout` — `"left"` sidebar or `"top"` tab bar |
+| `TitleHeight` / `TitleAlign` / `TitleIcon` | — | — | Shorthand for the matching `Style` fields |
+| `TabWidth` / `TabHeight` / `BodyPadding` / `Spacing` | number | — | Shorthand for the matching `Style` fields |
+| `StrokeThickness` / `Animation` / `PanelTransparency` | number | — | Shorthand for the matching `Style` fields |
+| `BackgroundImage` / `BackgroundImageTransparency` | — | — | Shorthand for the matching `Style` fields |
+| `AccentGradient` | `ColorSequence` or `{Color3,...}` | — | Accent becomes a sweep on the stripe, tab indicators, and section ticks |
 
 ### Per-script visual style
 
@@ -102,7 +107,7 @@ look distinct without forking the library:
 | `text` / `textDim` | primary / secondary text |
 | `danger` | destructive / rebind-in-progress |
 
-**`Style`** — structure (non-colour). Also settable via the top-level shorthand fields.
+**`Style`** — structure (non-colour). Also settable via the top-level shorthand fields. Every token defaults to the original fixed look, so an existing script that passes nothing renders pixel-for-pixel as before.
 
 | key | type | default | effect |
 |---|---|---|---|
@@ -111,6 +116,27 @@ look distinct without forking the library:
 | `shadow` | boolean | `true` | Soft drop behind the panel |
 | `sheen` | boolean | `true` | Top-lit gradient on the panel |
 | `stripe` | boolean | `true` | Accent stripe in the title bar |
+| **`layout`** | string | `"left"` | **`"left"` sidebar tabs or `"top"` horizontal tab bar — the biggest single change in feel** |
+| `titleHeight` | number | `36` | Title-bar height in px |
+| `titleAlign` | string | `"left"` | `"left"` or `"center"` title text |
+| `titleIcon` | string | — | `rbxassetid://…` logo shown by the title (replaces the accent stripe) |
+| `tabWidth` | number | `120` | Sidebar width (`left` layout only) |
+| `tabHeight` | number | `30` | Per-tab button height |
+| `bodyPadding` | number | `12` | Inner padding of each tab page (density) |
+| `spacing` | number | `2` | Vertical gap between control rows (density) |
+| `strokeThickness` | number | `1` | Thickness of every hairline outline (`2`–`3` = framed look) |
+| `animation` | number | `1` | Tween-duration multiplier (`0.5` snappier, `2` slower, `0` instant) |
+| `sheenStrength` | number | `0.05` | How pronounced the panel sheen is |
+| `shadowSpread` / `shadowTransparency` | number | `30` / `0.65` | Drop-shadow size / faintness |
+| `panelTransparency` | number | `0` | `0` solid, `~0.1`–`0.3` glass / acrylic |
+| `backgroundImage` | string | — | `rbxassetid://…` texture behind the panel body |
+| `backgroundImageTransparency` | number | `0.85` | How subtle that texture is |
+
+Plus the colour channel:
+
+| key | type | effect |
+|---|---|---|
+| `AccentGradient` (top-level) or `Theme.accentGradient` | `ColorSequence` or `{Color3, Color3, …}` | Turns the accent into a colour sweep on the title stripe, tab indicators, and section ticks |
 
 ```lua
 -- A sharp, flat, monospaced look — nothing like the rounded default.
@@ -125,8 +151,49 @@ local Window = UI:CreateWindow({
 })
 ```
 
+### Making each script look unique
+
+The defaults reproduce the stock look exactly, so the way to make a script's menu
+*not* read as "generic OvertimeUI" is to lean on these tokens. Two recipes that
+land in completely different places:
+
+```lua
+-- 1) Top tab-bar, pill-shaped, gradient accent, glassy panel, snappy motion.
+local Window = UI:CreateWindow({
+    Name           = "Aurora",
+    SubTitle       = "build 7",
+    TitleAlign     = "center",
+    AccentGradient = { Color3.fromRGB(120, 90, 255), Color3.fromRGB(0, 200, 255) },
+    Layout         = "top",
+    Roundness      = 2,            -- pill-y
+    PanelTransparency = 0.12,      -- acrylic
+    Animation      = 0.6,          -- snappier
+    Theme = { bg = Color3.fromRGB(18, 16, 28), bgAlt = Color3.fromRGB(24, 22, 36) },
+})
+```
+
+```lua
+-- 2) Dense, sharp, heavy-framed terminal look with a logo and no decorations.
+local Window = UI:CreateWindow({
+    Name        = "RootKit",
+    TitleIcon   = "rbxassetid://0",   -- your logo asset
+    Accent      = Color3.fromRGB(0, 255, 140),
+    Roundness   = 0,                  -- hard corners
+    Font        = Enum.Font.Code,
+    StrokeThickness = 2,              -- chunky frames
+    TabWidth    = 92,
+    TabHeight   = 24,
+    BodyPadding = 8,
+    Spacing     = 1,                  -- tight
+    Sheen       = false,
+    Shadow      = false,
+})
+```
+
 Each window resolves its own style independently — two differently-styled windows
-can coexist and controls built into either after the fact stay on-style.
+can coexist and controls built into either after the fact stay on-style. See
+[`examples/Showcase.lua`](examples/Showcase.lua) for four wildly different menus
+built from the same library.
 
 ### `Window:CreateTab(name)`
 
