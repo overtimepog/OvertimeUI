@@ -2021,27 +2021,31 @@ function Section:CreateProgressBar(cfg)
         Position = UDim2.new(0, 2, 0, 24),
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
+        ClipsDescendants = true,   -- clips fill to track bounds (no pill overflow)
         Parent = row,
     })
     corner(track, 3)
     stroke(track, theme.border, 1)
 
+    -- No UICorner on the fill — it grows as a clean rectangle inside the rounded
+    -- track. ClipsDescendants bounds it so at any percentage you see a flat bar
+    -- growing left-to-right rather than a pill/capsule floating inside the track.
     local fill = Create("Frame", {
         Size = UDim2.new(0, 0, 1, 0),
         BackgroundColor3 = barColor,
         BorderSizePixel = 0,
         Parent = track,
     })
-    corner(fill, 3)
 
     local function refresh(v, silent)
         v = math.clamp(v, 0, maxVal)
         current = v
         local pct = (maxVal > 0) and (v / maxVal) or 0
+        local targetSize = UDim2.new(pct, 0, 1, 0)
         if silent then
-            fill.Size = UDim2.new(pct, 0, 1, 0)
+            fill.Size = targetSize
         else
-            tween(fill, { Size = UDim2.new(pct, 0, 1, 0) }, T_FAST)
+            tween(fill, { Size = targetSize }, T_FAST)
         end
         if valLbl then
             if suffix == "%" then
