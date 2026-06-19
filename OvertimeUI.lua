@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.4.0"
+OvertimeUI._VERSION = "0.5.0"
 
 -- =========================================================================
 -- Services & shared state
@@ -1959,6 +1959,164 @@ function Section:CreateCustom(cfg, builder)
     return handle
 end
 
+-- =========================================================================
+-- Progress Bar — visual-only fill bar for displaying numeric progress.
+-- =========================================================================
+-- Config:
+--   Name      = "Rebirths"    -- label (top-left)
+--   Value     = 0             -- initial current value
+--   Max       = 100           -- maximum value
+--   Suffix    = ""            -- appended to "curr / max" display (e.g. " XP")
+--   Color     = nil           -- bar fill color (default = theme.accent)
+--   ShowValue = true          -- show "curr / max" label top-right
+-- Returns handle with :Set(v), :SetSilent(v), :SetMax(m), :SetColor(c), :Get().
+function Section:CreateProgressBar(cfg)
+    cfg = cfg or {}
+    local window   = self.tab.window
+    local theme    = window.theme
+    local current  = cfg.Value or cfg.CurrentValue or 0
+    local maxVal   = cfg.Max or 100
+    local suffix   = cfg.Suffix or ""
+    local showVal  = cfg.ShowValue ~= false
+    local barColor = cfg.Color or theme.accent
+
+    local handle = { Type = "ProgressBar", Name = cfg.Name or "Progress" }
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    Create("TextLabel", {
+        Size = UDim2.new(1, showVal and -84 or -4, 0, 14),
+        Position = UDim2.new(0, 2, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Name or "Progress",
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local valLbl
+    if showVal then
+        valLbl = Create("TextLabel", {
+            Size = UDim2.new(0, 82, 0, 14),
+            Position = UDim2.new(1, -84, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            TextColor3 = theme.accent,
+            Font = FONT_SEMI,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = row,
+        })
+    end
+
+    local track = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, 6),
+        Position = UDim2.new(0, 2, 0, 24),
+        BackgroundColor3 = theme.surface,
+        BorderSizePixel = 0,
+        Parent = row,
+    })
+    corner(track, 3)
+    stroke(track, theme.border, 1)
+
+    local fill = Create("Frame", {
+        Size = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = barColor,
+        BorderSizePixel = 0,
+        Parent = track,
+    })
+    corner(fill, 3)
+
+    local function refresh(v, silent)
+        v = math.clamp(v, 0, maxVal)
+        current = v
+        local pct = (maxVal > 0) and (v / maxVal) or 0
+        if silent then
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+        else
+            tween(fill, { Size = UDim2.new(pct, 0, 1, 0) }, T_FAST)
+        end
+        if valLbl then
+            if suffix == "%" then
+                valLbl.Text = string.format("%d%%", math.floor(pct * 100 + 0.5))
+            else
+                valLbl.Text = string.format("%d / %d%s",
+                    math.floor(v + 0.5), math.floor(maxVal + 0.5), suffix)
+            end
+        end
+    end
+    refresh(current, true)
+
+    function handle:Set(v)       refresh(v, false) end
+    function handle:SetSilent(v) refresh(v, true)  end
+    function handle:SetMax(m)    maxVal = m; refresh(current, false) end
+    function handle:SetColor(c)  barColor = c; fill.BackgroundColor3 = c end
+    function handle:Get()        return current end
+
+    return handle
+end
+
+-- =========================================================================
+-- Stat — compact key : value row for live dashboard metrics.
+-- =========================================================================
+-- Config:
+--   Label = "Cash"      -- left-side key (dimmed)
+--   Value = "$0"        -- right-side value (accent-colored by default)
+--   Color = nil         -- optional override for value color
+-- Returns handle with :SetValue(text), :SetLabel(text), :SetColor(Color3).
+function Section:CreateStat(cfg)
+    cfg = cfg or {}
+    local theme = self.tab.window.theme
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, 22),
+        BackgroundColor3 = theme.surface,
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+    corner(row, 4)
+
+    local keyLbl = Create("TextLabel", {
+        Size = UDim2.new(0.55, -8, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Label or "Stat",
+        TextColor3 = theme.textDim,
+        Font = FONT,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local valLbl = Create("TextLabel", {
+        Size = UDim2.new(0.45, -8, 1, 0),
+        Position = UDim2.new(0.55, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text = tostring(cfg.Value or "—"),
+        TextColor3 = cfg.Color or theme.accent,
+        Font = FONT_SEMI,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = row,
+    })
+
+    local handle = { Type = "Stat" }
+    function handle:SetValue(t)  valLbl.Text       = tostring(t) end
+    function handle:SetLabel(t)  keyLbl.Text       = tostring(t) end
+    function handle:SetColor(c)  valLbl.TextColor3 = c           end
+    function handle:GetValue()   return valLbl.Text              end
+    return handle
+end
+
 -- LayoutOrder counter so items show up in the order they were added even
 -- though they share a parent UIListLayout.
 function Section:_next()
@@ -2209,6 +2367,42 @@ function Window:CreateTab(name, opts)
         sections = {},
     }, Tab)
 
+    -- Panel layout: no button or indicator. All sections share a single page.
+    -- Subsequent CreateTab calls return the same implicit tab so the caller's
+    -- tab:CreateSection() / tab:CreateLeftGroupbox() calls all land in one pane.
+    if self._panelLayout then
+        if self._panelTab then return self._panelTab end
+        local page = Create("ScrollingFrame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = theme.border,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = true,
+            Parent = self._tabBody,
+        })
+        local bp = math.max(0, math.floor(self.style.bodyPadding))
+        Create("UIPadding", {
+            PaddingTop    = UDim.new(0, math.max(4, bp - 4)),
+            PaddingBottom = UDim.new(0, bp),
+            PaddingLeft   = UDim.new(0, bp),
+            PaddingRight  = UDim.new(0, bp + 4),
+            Parent = page,
+        })
+        Create("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, math.max(0, math.floor(self.style.spacing))),
+            Parent = page,
+        })
+        tab.page = page
+        table.insert(self.tabs, tab)
+        self.activeTab  = tab
+        self._panelTab  = tab
+        return tab
+    end
+
     local topTabs  = (self.style.layout == "top")
     local tabHeight = math.max(20, math.floor(self.style.tabHeight))
 
@@ -2360,15 +2554,33 @@ function Window:CreateTab(name, opts)
     return tab
 end
 
+-- Convenience shorthands for panel-layout windows (Layout = "panel").
+-- Scripts skip the tab layer and call these directly on the window.
+-- In any other layout, these still work by auto-creating one implicit tab.
+function Window:CreateSection(name)
+    if not self._panelTab then self._panelTab = self:CreateTab("") end
+    return self._panelTab:CreateSection(name)
+end
+function Window:CreateLeftGroupbox(name)
+    if not self._panelTab then self._panelTab = self:CreateTab("") end
+    return self._panelTab:CreateLeftGroupbox(name)
+end
+function Window:CreateRightGroupbox(name)
+    if not self._panelTab then self._panelTab = self:CreateTab("") end
+    return self._panelTab:CreateRightGroupbox(name)
+end
+
 function Window:SwitchTab(tab)
     local theme = self.theme
     for _, t in ipairs(self.tabs) do
         local active = (t == tab)
         t.page.Visible = active
-        tween(t.button, {
-            BackgroundTransparency = active and 0 or 1,
-            BackgroundColor3 = theme.surface,
-        }, T_NORMAL)
+        if t.button then
+            tween(t.button, {
+                BackgroundTransparency = active and 0 or 1,
+                BackgroundColor3 = theme.surface,
+            }, T_NORMAL)
+        end
         if t._label then
             tween(t._label, { TextColor3 = active and theme.accent or theme.textDim }, T_NORMAL)
         end
@@ -2595,7 +2807,7 @@ function OvertimeUI:CreateWindow(cfg)
         self.style.spacing            = num(cfg.Spacing,         st.spacing)           or self.style.spacing
 
         local layout = pick(cfg.Layout, st.layout)
-        if layout == "top" or layout == "left" then self.style.layout = layout end
+        if layout == "top" or layout == "left" or layout == "panel" then self.style.layout = layout end
         local talign = pick(cfg.TitleAlign, st.titleAlign)
         if talign == "center" or talign == "left" then self.style.titleAlign = talign end
 
@@ -2640,8 +2852,9 @@ function OvertimeUI:CreateWindow(cfg)
     -- defaultStyle() reproduce the original fixed look exactly.
     local S        = self.style
     local titleH   = math.max(20, math.floor(S.titleHeight))
-    local panelT   = math.clamp(S.panelTransparency or 0, 0, 1)
-    local topTabs  = (S.layout == "top")
+    local panelT      = math.clamp(S.panelTransparency or 0, 0, 1)
+    local panelLayout = (S.layout == "panel")
+    local topTabs     = (S.layout == "top")
     local tabW     = math.max(48, math.floor(S.tabWidth))
     local topStripH = math.max(24, math.floor(S.tabHeight) + 8) -- top-layout strip height
     local GAP      = 8
@@ -2851,7 +3064,24 @@ function OvertimeUI:CreateWindow(cfg)
     self.content = content
 
     local tabStrip, tabBody
-    if topTabs then
+    if panelLayout then
+        -- No tab strip — a single scrollable body fills the entire content area.
+        -- Scripts use Window:CreateSection() or Window:CreateTab() directly.
+        tabBody = Create("Frame", {
+            Name = "TabBody",
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabBody, 8)
+        if GRAD_STROKE then gradStroke(tabBody, self.theme.border, self.theme.borderHi) end
+        depthFill(tabBody, 0.06)
+        self._tabStrip    = nil
+        self._tabBody     = tabBody
+        self._panelLayout = true
+        self._panelTab    = nil
+    elseif topTabs then
         -- Horizontal tab bar across the top of the content area.
         tabStrip = Create("Frame", {
             Name = "TabStrip",
