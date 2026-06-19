@@ -1989,7 +1989,7 @@ function Section:CreateProgressBar(cfg)
         Parent = self.container,
     })
 
-    Create("TextLabel", {
+    local nameLbl = Create("TextLabel", {
         Size = UDim2.new(1, showVal and -84 or -4, 0, 14),
         Position = UDim2.new(0, 2, 0, 0),
         BackgroundTransparency = 1,
@@ -2058,11 +2058,13 @@ function Section:CreateProgressBar(cfg)
     end
     refresh(current, true)
 
-    function handle:Set(v)       refresh(v, false) end
-    function handle:SetSilent(v) refresh(v, true)  end
-    function handle:SetMax(m)    maxVal = m; refresh(current, false) end
-    function handle:SetColor(c)  barColor = c; fill.BackgroundColor3 = c end
-    function handle:Get()        return current end
+    function handle:Set(v)           refresh(v, false) end
+    function handle:SetSilent(v)     refresh(v, true)  end
+    function handle:SetMax(m)        maxVal = m; refresh(current, false) end
+    function handle:SetColor(c)      barColor = c; fill.BackgroundColor3 = c end
+    function handle:Get()            return current end
+    function handle:SetName(text)    nameLbl.Text = text end
+    function handle:SetNameColor(c)  nameLbl.TextColor3 = c end
 
     return handle
 end
@@ -2159,38 +2161,37 @@ function Tab:CreateSection(name)
         })
     end
 
-    -- Header row = a transparent list item holding the accent tick + the
-    -- title. The page's UIListLayout overrides a child's Position, so the
-    -- tick can't live directly on the laid-out label (it would land at x=0,
-    -- overprinting the first letter — that's what turned "INFO" into "NFO").
-    -- Wrapping them in this non-laid-out frame lets both sit where we put
-    -- them: tick in the control column, title indented just past it.
-    local headerRow = Create("Frame", {
-        Size = UDim2.new(1, -10, 0, 16),
-        BackgroundTransparency = 1,
-        LayoutOrder = sectionOrder * 1000 + 1,
-        Parent = self.page,
-    })
-    local tick = Create("Frame", {
-        Size = UDim2.fromOffset(3, 11),
-        Position = UDim2.new(0, 2, 0.5, -5),
-        BackgroundColor3 = theme.accent,
-        BorderSizePixel = 0,
-        Parent = headerRow,
-    })
-    corner(tick, 2)
-    applyAccentGradient(tick, window.accentGradient, 90)
-    local header = Create("TextLabel", {
-        Size = UDim2.new(1, -12, 1, 0),
-        Position = UDim2.new(0, 12, 0, 0),
-        BackgroundTransparency = 1,
-        Text = string.upper(name or "Section"),
-        TextColor3 = theme.accent,
-        Font = FONT_BOLD,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = headerRow,
-    })
+    -- Header row: accent tick + section title. Skipped when name is empty/nil
+    -- so callers can create headerless sections (saves 18px of canvas height).
+    local header
+    if name and name ~= "" then
+        local headerRow = Create("Frame", {
+            Size = UDim2.new(1, -10, 0, 16),
+            BackgroundTransparency = 1,
+            LayoutOrder = sectionOrder * 1000 + 1,
+            Parent = self.page,
+        })
+        local tick = Create("Frame", {
+            Size = UDim2.fromOffset(3, 11),
+            Position = UDim2.new(0, 2, 0.5, -5),
+            BackgroundColor3 = theme.accent,
+            BorderSizePixel = 0,
+            Parent = headerRow,
+        })
+        corner(tick, 2)
+        applyAccentGradient(tick, window.accentGradient, 90)
+        header = Create("TextLabel", {
+            Size = UDim2.new(1, -12, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = string.upper(name),
+            TextColor3 = theme.accent,
+            Font = FONT_BOLD,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = headerRow,
+        })
+    end
 
     -- Container for the section's controls. Uses its own UIListLayout so
     -- the controls stack cleanly under the header.
@@ -2198,7 +2199,7 @@ function Tab:CreateSection(name)
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1,
-        LayoutOrder = sectionOrder * 1000 + 2,
+        LayoutOrder = sectionOrder * 1000 + (header and 2 or 1),
         Parent = self.page,
     })
     Create("UIListLayout", {
