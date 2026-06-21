@@ -828,7 +828,7 @@ function Section:CreateToggle(cfg)
     if cfg.SaveId and window._registerSave then
         window:_registerSave(cfg.SaveId, "bool",
             function() return state end,
-            function(v) setState(v == true, false) end)
+            function(v) setState(v == true, true) end)
     end
     return handle
 end
@@ -1271,7 +1271,7 @@ function Section:CreateDropdown(cfg)
             function() return current end,
             function(v)
                 if type(v) == "string" and table.find(options, v) then
-                    setOption(v, false)
+                    setOption(v, true)
                 end
             end)
     end
@@ -1618,7 +1618,7 @@ function Section:CreateColorPicker(cfg)
             function(v)
                 if type(v) == "string" then
                     local c = parseHex(v)
-                    if c then setColor(c, false) end
+                    if c then setColor(c, true) end
                 end
             end)
     end
@@ -2431,7 +2431,7 @@ function Section:CreateCheckBox(cfg)
     if cfg.SaveId and window._registerSave then
         window:_registerSave(cfg.SaveId, "bool",
             function() return state end,
-            function(v) setState(v == true, false) end)
+            function(v) setState(v == true, true) end)
     end
 
     function handle:Get()         return state end
@@ -2692,6 +2692,7 @@ function Section:CreateMultiDropdown(cfg)
                         if table.find(options, s) then table.insert(selected, s) end
                     end
                     rebuildBtn()
+                    fireCallback()
                 end
             end)
     end
