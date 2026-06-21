@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.5.0"
+OvertimeUI._VERSION = "0.6.0"
 
 -- =========================================================================
 -- Services & shared state
@@ -39,6 +39,7 @@ local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local HttpService  = game:GetService("HttpService")
 local LP         = Players.LocalPlayer
 
 -- Font + structural style are *mutable module state*, not constants. Every
@@ -221,6 +222,35 @@ OvertimeUI.Themes = {
         text = rgb(250, 240, 226), textDim = rgb(168, 148, 120),
     },
 }
+
+-- ProxyLib-compatible named theme aliases. Pass Theme = "Blue" (etc.) to CreateWindow
+-- just like ProxyLib does. These map to existing palettes or define new ones.
+OvertimeUI.Themes.Blue   = OvertimeUI.Themes.Dark   -- blue-accent dark (the default)
+OvertimeUI.Themes.Red    = {
+    bg=rgb(20,10,12), bgAlt=rgb(28,14,16), surface=rgb(42,20,24),
+    surfaceHi=rgb(58,28,32), border=rgb(58,26,30), borderHi=rgb(130,50,60),
+    accent=rgb(235,70,70), accentDim=rgb(140,40,40), accentGlow=rgb(255,100,100),
+    text=rgb(252,234,236), textDim=rgb(170,120,128), shadow=rgb(0,0,0),
+    danger=rgb(235,92,96),
+}
+OvertimeUI.Themes.Green  = OvertimeUI.Themes.Forest
+OvertimeUI.Themes.Purple = {
+    bg=rgb(14,10,22), bgAlt=rgb(20,14,30), surface=rgb(30,22,46),
+    surfaceHi=rgb(44,32,66), border=rgb(44,30,70), borderHi=rgb(100,64,160),
+    accent=rgb(160,100,255), accentDim=rgb(80,50,150), accentGlow=rgb(190,130,255),
+    text=rgb(238,232,252), textDim=rgb(148,130,180), shadow=rgb(0,0,0),
+    danger=rgb(235,92,96),
+}
+OvertimeUI.Themes.Pink   = OvertimeUI.Themes.Rose
+OvertimeUI.Themes.Yellow = OvertimeUI.Themes.Amber
+OvertimeUI.Themes.White  = {
+    bg=rgb(16,17,20), bgAlt=rgb(22,24,28), surface=rgb(34,37,44),
+    surfaceHi=rgb(48,52,62), border=rgb(52,56,66), borderHi=rgb(110,115,135),
+    accent=rgb(255,255,255), accentDim=rgb(160,162,170), accentGlow=rgb(255,255,255),
+    text=rgb(242,243,248), textDim=rgb(140,143,158), shadow=rgb(0,0,0),
+    danger=rgb(235,92,96),
+}
+OvertimeUI.Themes.Grey   = OvertimeUI.Themes.Mono
 
 OvertimeUI.Presets = {
     -- Modern frosted top-bar with a gradient accent and glow — the "premium" look.
@@ -748,6 +778,7 @@ function Section:CreateToggle(cfg)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, state)
         end
+        if fireCallback and cfg.SaveId and window._autoSave then window:Save() end
     end
 
     row.MouseButton1Click:Connect(function() setState(not state, true) end)
@@ -794,6 +825,11 @@ function Section:CreateToggle(cfg)
         return self
     end
 
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "bool",
+            function() return state end,
+            function(v) setState(v == true, false) end)
+    end
     return handle
 end
 
@@ -961,6 +997,7 @@ function Section:CreateSlider(cfg)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, v)
         end
+        if fireCallback and cfg.SaveId and window._autoSave then window:Save() end
     end
     setValue(value, false)
 
@@ -1020,6 +1057,11 @@ function Section:CreateSlider(cfg)
     function handle:Set(v) setValue(v, true, true) end
     function handle:SetSilent(v) setValue(v, false, true) end
 
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "number",
+            function() return value end,
+            function(v) setValue(tonumber(v) or value, false, false) end)
+    end
     return handle
 end
 
@@ -1036,6 +1078,7 @@ end
 -- captures click-outside-to-close.
 function Section:CreateDropdown(cfg)
     cfg = cfg or {}
+    if cfg.Multi == true then return self:CreateMultiDropdown(cfg) end
     local window = self.tab.window
     local theme  = window.theme
     local gui    = window.gui
@@ -1113,6 +1156,7 @@ function Section:CreateDropdown(cfg)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, v)
         end
+        if fireCallback and cfg.SaveId and window._autoSave then window:Save() end
     end
 
     local function openPopup()
@@ -1222,6 +1266,15 @@ function Section:CreateDropdown(cfg)
         closePopup()
     end
 
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "string",
+            function() return current end,
+            function(v)
+                if type(v) == "string" and table.find(options, v) then
+                    setOption(v, false)
+                end
+            end)
+    end
     return handle
 end
 
@@ -1317,6 +1370,7 @@ function Section:CreateColorPicker(cfg)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, c)
         end
+        if fireCallback and cfg.SaveId and window._autoSave then window:Save() end
     end
 
     local function setColor(c, fireCallback)
@@ -1550,6 +1604,24 @@ function Section:CreateColorPicker(cfg)
     function handle:Set(c)       setColor(c, true) end
     function handle:SetSilent(c) setColor(c, false) end
 
+    if cfg.SaveId and window._registerSave then
+        local function hexColor(c)
+            return string.format("#%02X%02X%02X",
+                math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5))
+        end
+        local function parseHex(hex)
+            local r, g, b = hex:match("#?(%x%x)(%x%x)(%x%x)")
+            if r then return Color3.fromRGB(tonumber(r,16), tonumber(g,16), tonumber(b,16)) end
+        end
+        window:_registerSave(cfg.SaveId, "color",
+            function() return hexColor(currentColor) end,
+            function(v)
+                if type(v) == "string" then
+                    local c = parseHex(v)
+                    if c then setColor(c, false) end
+                end
+            end)
+    end
     return handle
 end
 
@@ -1738,7 +1810,8 @@ end
 -- =========================================================================
 function Section:CreateInput(cfg)
     cfg = cfg or {}
-    local theme = self.tab.window.theme
+    local window = self.tab.window
+    local theme  = window.theme
 
     local currentText = cfg.CurrentValue or ""
     local handle = {
@@ -1788,6 +1861,7 @@ function Section:CreateInput(cfg)
         if cfg.Callback then
             task.spawn(cfg.Callback, currentText)
         end
+        if cfg.SaveId and window._autoSave then window:Save() end
     end
 
     box.FocusLost:Connect(function(enterPressed)
@@ -1821,6 +1895,11 @@ function Section:CreateInput(cfg)
         box.Text = text
     end
 
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "string",
+            function() return currentText end,
+            function(v) if type(v) == "string" then currentText = v; box.Text = v end end)
+    end
     return handle
 end
 
@@ -2120,6 +2199,540 @@ function Section:CreateStat(cfg)
     function handle:SetLabel(t)  keyLbl.Text       = tostring(t) end
     function handle:SetColor(c)  valLbl.TextColor3 = c           end
     function handle:GetValue()   return valLbl.Text              end
+    return handle
+end
+
+-- =========================================================================
+-- TextBox (ProxyLib-compatible) — full-width text input with character counter.
+-- =========================================================================
+-- Config:
+--   Title       = "Player Name"
+--   Placeholder = "Type here..."
+--   MaxLength   = 100
+--   Default     = ""
+--   Callback    = function(text) ... end   (fires on FocusLost / Enter)
+--   SaveId      = "unique_key"
+-- Returns handle with :Get(), :Set(text), :SetSilent(text), :SetTitle, :SetPlaceholder.
+function Section:CreateTextBox(cfg)
+    cfg = cfg or {}
+    local window = self.tab.window
+    local theme  = window.theme
+
+    local maxLen     = cfg.MaxLength or 100
+    local currentText = cfg.Default or cfg.CurrentValue or ""
+    local handle = { Type = "TextBox", Name = cfg.Title or cfg.Name or "Text" }
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, -4, 0, 44),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    local titleLbl = Create("TextLabel", {
+        Size = UDim2.new(1, -64, 0, 14),
+        Position = UDim2.new(0, 2, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Title or cfg.Name or "Text",
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local counterLbl = Create("TextLabel", {
+        Size = UDim2.new(0, 60, 0, 14),
+        Position = UDim2.new(1, -62, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "0/" .. maxLen,
+        TextColor3 = theme.textDim,
+        Font = FONT_SEMI,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = row,
+    })
+
+    local box = Create("TextBox", {
+        Size = UDim2.new(1, -4, 0, 26),
+        Position = UDim2.new(0, 2, 0, 16),
+        BackgroundColor3 = theme.surface,
+        BorderSizePixel = 0,
+        Text = currentText,
+        PlaceholderText = cfg.Placeholder or "Type here...",
+        PlaceholderColor3 = theme.textDim,
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+    corner(box, 4)
+    local boxStroke = stroke(box, theme.border, 1)
+    padding(box, 0, 0, 6, 6)
+
+    local YELLOW_WARN = Color3.fromRGB(255, 200, 60)
+    local function updateCounter(text)
+        local len = #text
+        local pct = maxLen > 0 and (len / maxLen) or 0
+        counterLbl.Text = len .. "/" .. maxLen
+        if pct >= 0.85 then
+            counterLbl.TextColor3 = theme.danger
+        elseif pct >= 0.60 then
+            counterLbl.TextColor3 = YELLOW_WARN
+        else
+            counterLbl.TextColor3 = theme.textDim
+        end
+    end
+    updateCounter(currentText)
+
+    box:GetPropertyChangedSignal("Text"):Connect(function()
+        local t = box.Text
+        if #t > maxLen then
+            box.Text = t:sub(1, maxLen)
+            return
+        end
+        currentText = t
+        updateCounter(t)
+    end)
+
+    box.Focused:Connect(function()
+        tween(boxStroke, { Color = theme.accent }, T_FAST)
+    end)
+    box.FocusLost:Connect(function()
+        tween(boxStroke, { Color = theme.border }, T_FAST)
+        currentText = box.Text
+        if cfg.Callback then task.spawn(cfg.Callback, currentText) end
+        if cfg.SaveId and window._autoSave then window:Save() end
+    end)
+
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "string",
+            function() return currentText end,
+            function(v)
+                if type(v) == "string" then
+                    currentText = v; box.Text = v; updateCounter(v)
+                end
+            end)
+    end
+
+    function handle:Get() return currentText end
+    function handle:Set(text)
+        if type(text) ~= "string" then return end
+        currentText = text; box.Text = text; updateCounter(text)
+        if cfg.Callback then task.spawn(cfg.Callback, text) end
+    end
+    function handle:SetSilent(text)
+        if type(text) ~= "string" then return end
+        currentText = text; box.Text = text; updateCounter(text)
+    end
+    function handle:SetTitle(t)      titleLbl.Text = t end
+    function handle:SetPlaceholder(p) box.PlaceholderText = p end
+
+    return handle
+end
+
+-- =========================================================================
+-- CheckBox — square checkbox with animated checkmark (alternative to Toggle).
+-- =========================================================================
+-- Config:
+--   Title       = "Show Names"
+--   Description = ""            (optional subtitle below the title)
+--   Default     = false
+--   Callback    = function(value: boolean) ... end
+--   SaveId      = "unique_key"
+-- Returns handle with :Get(), :Set(v), :SetSilent(v), :SetTitle, :SetDescription.
+function Section:CreateCheckBox(cfg)
+    cfg = cfg or {}
+    local window = self.tab.window
+    local theme  = window.theme
+
+    local state  = cfg.Default == true
+    local hasDesc = type(cfg.Description) == "string" and cfg.Description ~= ""
+    local handle = { Type = "CheckBox", Name = cfg.Title or cfg.Name or "CheckBox" }
+
+    local ROW_H = hasDesc and 38 or 26
+    local BOX   = 16
+
+    local row = Create("TextButton", {
+        Size = UDim2.new(1, -4, 0, ROW_H),
+        BackgroundTransparency = 1,
+        AutoButtonColor = false,
+        Text = "",
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    local box = Create("Frame", {
+        Size = UDim2.fromOffset(BOX, BOX),
+        Position = UDim2.new(0, 2, 0.5, -BOX/2),
+        BackgroundColor3 = state and theme.accent or theme.surface,
+        BorderSizePixel = 0,
+        Parent = row,
+    })
+    corner(box, 3)
+    local boxStroke = stroke(box, state and theme.accent or theme.border, 1)
+
+    local check = Create("TextLabel", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "✓",
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = FONT_BOLD,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextTransparency = state and 0 or 1,
+        Parent = box,
+    })
+
+    local titleLbl = Create("TextLabel", {
+        Size = UDim2.new(1, -(BOX + 14), hasDesc and 0 or 1, 0),
+        AutomaticSize = hasDesc and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
+        Position = UDim2.new(0, BOX + 8, 0, hasDesc and 4 or 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Title or cfg.Name or "CheckBox",
+        TextColor3 = state and theme.text or theme.textDim,
+        Font = FONT,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local descLbl
+    if hasDesc then
+        descLbl = Create("TextLabel", {
+            Size = UDim2.new(1, -(BOX + 14), 0, 14),
+            Position = UDim2.new(0, BOX + 8, 0, 20),
+            BackgroundTransparency = 1,
+            Text = cfg.Description,
+            TextColor3 = theme.textDim,
+            Font = FONT,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = row,
+        })
+    end
+
+    local function setState(v, fireCallback)
+        v = not not v
+        if v == state then return end
+        state = v
+        tween(box,      { BackgroundColor3 = state and theme.accent or theme.surface }, T_NORMAL)
+        tween(boxStroke,{ Color = state and theme.accent or theme.border }, T_NORMAL)
+        tween(check,    { TextTransparency = state and 0 or 1 }, T_FAST)
+        tween(titleLbl, { TextColor3 = state and theme.text or theme.textDim }, T_NORMAL)
+        if fireCallback and cfg.Callback then task.spawn(cfg.Callback, state) end
+        if fireCallback and cfg.SaveId and window._autoSave then window:Save() end
+    end
+
+    row.MouseButton1Click:Connect(function() setState(not state, true) end)
+
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "bool",
+            function() return state end,
+            function(v) setState(v == true, false) end)
+    end
+
+    function handle:Get()         return state end
+    function handle:Set(v)        setState(v, true) end
+    function handle:SetSilent(v)  setState(v, false) end
+    function handle:SetTitle(t)   titleLbl.Text = t end
+    function handle:SetDescription(t)
+        if descLbl then descLbl.Text = t end
+    end
+
+    return handle
+end
+
+-- =========================================================================
+-- MultiDropdown — multi-select dropdown (dispatched from CreateDropdown when
+-- cfg.Multi = true). Selections are shown as "A, B" or "N selected".
+-- =========================================================================
+-- Config mirrors CreateDropdown except Default is a table of pre-selected values
+-- and Callback receives a table (copy of current selections).
+function Section:CreateMultiDropdown(cfg)
+    cfg = cfg or {}
+    local window = self.tab.window
+    local theme  = window.theme
+    local gui    = window.gui
+
+    local options  = cfg.Options or {}
+    local selected = {}
+    if type(cfg.Default) == "table" then
+        for _, v in ipairs(cfg.Default) do
+            if table.find(options, v) then table.insert(selected, v) end
+        end
+    elseif type(cfg.CurrentOption) == "string" then
+        if table.find(options, cfg.CurrentOption) then
+            selected = { cfg.CurrentOption }
+        end
+    end
+
+    local handle = { Type = "Dropdown", Name = cfg.Name or "Dropdown" }
+
+    local row = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 38),
+        BackgroundTransparency = 1,
+        LayoutOrder = self:_next(),
+        Parent = self.container,
+    })
+
+    Create("TextLabel", {
+        Size = UDim2.new(1, -4, 0, 14),
+        Position = UDim2.new(0, 2, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cfg.Name or "Dropdown",
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+
+    local function selectionText()
+        if #selected == 0 then return "None   ▼" end
+        if #selected == 1 then return " " .. selected[1] .. "   ▼" end
+        if #selected == 2 then return " " .. selected[1] .. ", " .. selected[2] .. "   ▼" end
+        return " " .. #selected .. " selected   ▼"
+    end
+
+    local btn = Create("TextButton", {
+        Size = UDim2.new(1, -4, 0, 22),
+        Position = UDim2.new(0, 2, 0, 16),
+        BackgroundColor3 = theme.surface,
+        BorderSizePixel = 0,
+        Text = selectionText(),
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        AutoButtonColor = false,
+        Parent = row,
+    })
+    corner(btn, 5)
+    local btnStroke = stroke(btn, theme.border, 1)
+
+    local popupOpen = false
+    local popupBackdrop
+
+    btn.MouseEnter:Connect(function()
+        tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+        tween(btnStroke, { Color = theme.borderHi }, T_FAST)
+    end)
+    btn.MouseLeave:Connect(function()
+        if popupOpen then return end
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
+    end)
+
+    local function rebuildBtn() btn.Text = selectionText() end
+
+    local function fireCallback()
+        if cfg.Callback then
+            local copy = {}
+            for _, v in ipairs(selected) do table.insert(copy, v) end
+            task.spawn(cfg.Callback, copy)
+        end
+        if cfg.SaveId and window._autoSave then window:Save() end
+    end
+
+    local function closePopup()
+        popupOpen = false
+        if popupBackdrop then
+            popupBackdrop:Destroy()
+            popupBackdrop = nil
+        end
+        tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+        tween(btnStroke, { Color = theme.border }, T_FAST)
+    end
+
+    local optBtns = {}   -- {frame, checkMark} indexed by option string
+
+    local function openPopup()
+        if popupOpen then return end
+        popupOpen = true
+
+        popupBackdrop = Create("TextButton", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 50,
+            Parent = gui,
+        })
+        popupBackdrop.MouseButton1Click:Connect(closePopup)
+
+        local optH = 22
+        local totalH = math.min(#options, 8) * optH + 4
+        local popupFrame = Create("Frame", {
+            Size = UDim2.fromOffset(btn.AbsoluteSize.X, totalH),
+            Position = UDim2.fromOffset(btn.AbsolutePosition.X, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y + 4),
+            BackgroundColor3 = theme.bgAlt,
+            BorderSizePixel = 0,
+            ZIndex = 51,
+            Parent = popupBackdrop,
+        })
+        corner(popupFrame, 6)
+        stroke(popupFrame, theme.borderHi, 1)
+        shadow(popupFrame, 18, 0.7)
+
+        local uiscale = Create("UIScale", { Scale = 0.96, Parent = popupFrame })
+        popupFrame.Size = UDim2.fromOffset(btn.AbsoluteSize.X, 0)
+        tween(popupFrame, { Size = UDim2.fromOffset(btn.AbsoluteSize.X, totalH) }, T_NORMAL)
+        tween(uiscale, { Scale = 1 }, T_NORMAL)
+
+        local scroll = Create("ScrollingFrame", {
+            Size = UDim2.new(1, -4, 1, -4),
+            Position = UDim2.fromOffset(2, 2),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 2,
+            ScrollBarImageColor3 = theme.border,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ZIndex = 52,
+            Parent = popupFrame,
+        })
+        Create("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 2),
+            Parent = scroll,
+        })
+
+        table.clear(optBtns)
+        for i, opt in ipairs(options) do
+            local isSel = table.find(selected, opt) ~= nil
+            local optRow = Create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundColor3 = isSel and theme.surfaceHi or theme.surface,
+                BorderSizePixel = 0,
+                Text = "  " .. tostring(opt),
+                TextColor3 = isSel and theme.accent or theme.text,
+                Font = FONT,
+                TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                AutoButtonColor = false,
+                LayoutOrder = i,
+                ZIndex = 53,
+                Parent = scroll,
+            })
+            corner(optRow, 4)
+
+            -- Small square checkbox on the right
+            local cb = Create("Frame", {
+                Size = UDim2.fromOffset(12, 12),
+                Position = UDim2.new(1, -16, 0.5, -6),
+                BackgroundColor3 = isSel and theme.accent or theme.surface,
+                BorderSizePixel = 0,
+                ZIndex = 54,
+                Parent = optRow,
+            })
+            corner(cb, 2)
+            stroke(cb, isSel and theme.accent or theme.border, 1)
+            local ck = Create("TextLabel", {
+                Size = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1,
+                Text = "✓",
+                TextColor3 = Color3.new(1,1,1),
+                Font = FONT_BOLD,
+                TextSize = 9,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextTransparency = isSel and 0 or 1,
+                ZIndex = 55,
+                Parent = cb,
+            })
+            optBtns[opt] = { row = optRow, cb = cb, ck = ck }
+
+            optRow.MouseEnter:Connect(function()
+                if not table.find(selected, opt) then
+                    tween(optRow, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+                end
+            end)
+            optRow.MouseLeave:Connect(function()
+                if not table.find(selected, opt) then
+                    tween(optRow, { BackgroundColor3 = theme.surface }, T_FAST)
+                end
+            end)
+            optRow.MouseButton1Click:Connect(function()
+                local idx = table.find(selected, opt)
+                if idx then
+                    table.remove(selected, idx)
+                    tween(optRow, { BackgroundColor3 = theme.surface, TextColor3 = theme.text }, T_FAST)
+                    tween(cb, { BackgroundColor3 = theme.surface }, T_FAST)
+                    tween(ck, { TextTransparency = 1 }, T_FAST)
+                else
+                    table.insert(selected, opt)
+                    tween(optRow, { BackgroundColor3 = theme.surfaceHi, TextColor3 = theme.accent }, T_FAST)
+                    tween(cb, { BackgroundColor3 = theme.accent }, T_FAST)
+                    tween(ck, { TextTransparency = 0 }, T_FAST)
+                end
+                rebuildBtn()
+                fireCallback()
+            end)
+        end
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        if popupOpen then closePopup() else openPopup() end
+    end)
+    table.insert(window._cleanup, closePopup)
+
+    if cfg.SaveId and window._registerSave then
+        window:_registerSave(cfg.SaveId, "multistring",
+            function()
+                local copy = {}
+                for _, v in ipairs(selected) do table.insert(copy, v) end
+                return copy
+            end,
+            function(v)
+                if type(v) == "table" then
+                    selected = {}
+                    for _, s in ipairs(v) do
+                        if table.find(options, s) then table.insert(selected, s) end
+                    end
+                    rebuildBtn()
+                end
+            end)
+    end
+
+    function handle:Get()
+        local copy = {}
+        for _, v in ipairs(selected) do table.insert(copy, v) end
+        return copy
+    end
+    function handle:Set(v)
+        if type(v) == "table" then
+            selected = {}
+            for _, s in ipairs(v) do
+                if table.find(options, s) then table.insert(selected, s) end
+            end
+        elseif type(v) == "string" and table.find(options, v) then
+            selected = { v }
+        end
+        rebuildBtn()
+        fireCallback()
+    end
+    function handle:SetSilent(v)
+        if type(v) == "table" then
+            selected = {}
+            for _, s in ipairs(v) do
+                if table.find(options, s) then table.insert(selected, s) end
+            end
+        end
+        rebuildBtn()
+    end
+    function handle:Refresh(newOptions)
+        options = newOptions or {}
+        local keep = {}
+        for _, v in ipairs(selected) do
+            if table.find(options, v) then table.insert(keep, v) end
+        end
+        selected = keep
+        rebuildBtn()
+        closePopup()
+    end
+
     return handle
 end
 
@@ -2608,6 +3221,95 @@ function Window:OnClose(cb)
 end
 
 -- =====================================================================
+-- AutoSave / AutoLoad — persist control values to a JSON file.
+-- =====================================================================
+-- Enable with SaveFile = "MyScript.cfg" (and AutoSave = true / AutoLoad = true)
+-- in CreateWindow. Each control opts in with SaveId = "unique_key". The registry
+-- is populated as controls are created; _registerSave applies the cached loaded
+-- value immediately so the control initializes to its saved state on the same
+-- frame it's created.
+
+function Window:_registerSave(saveId, valueType, getter, setter)
+    self._saveRegistry[saveId] = { get = getter, set = setter, vtype = valueType }
+    if self._savedData and self._savedData[saveId] ~= nil then
+        pcall(setter, self._savedData[saveId])
+    end
+end
+
+function Window:Save()
+    if not self._saveFile then return end
+    local data = {}
+    for id, entry in pairs(self._saveRegistry) do
+        local ok, val = pcall(entry.get)
+        if ok then data[id] = val end
+    end
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+    if ok then pcall(writefile, self._saveFile, encoded) end
+end
+
+function Window:Load()
+    if not self._saveFile then return end
+    local ok, raw = pcall(readfile, self._saveFile)
+    if not ok or not raw or raw == "" then return end
+    local ok2, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if ok2 and type(data) == "table" then
+        self._savedData = data
+        for id, value in pairs(data) do
+            local entry = self._saveRegistry[id]
+            if entry then pcall(entry.set, value) end
+        end
+    end
+end
+
+-- =====================================================================
+-- Sidebar helpers (ProxyLib-compatible)
+-- =====================================================================
+-- CreateSeparator inserts a dimmed category label between tab buttons in
+-- the left-layout sidebar. CreateSidebarLine draws a thin divider.
+-- Both are no-ops in top/panel layouts (no sidebar to put them in).
+
+function Window:CreateSeparator(cfg)
+    if not self._tabStrip then return end
+    local theme = self.theme
+    local text  = type(cfg) == "string" and cfg or (type(cfg) == "table" and cfg.Text) or ""
+
+    local lbl = Create("TextLabel", {
+        Size = UDim2.new(1, -8, 0, text ~= "" and 20 or 6),
+        BackgroundTransparency = 1,
+        Text = string.upper(text),
+        TextColor3 = theme.textDim,
+        Font = FONT_BOLD,
+        TextSize = 9,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = (#self.tabs + 1) * 100,
+        Parent = self._tabStrip,
+    })
+    if text ~= "" then
+        Create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = lbl })
+    end
+end
+
+function Window:CreateSidebarLine()
+    if not self._tabStrip then return end
+    local theme = self.theme
+    local line = Create("Frame", {
+        Size = UDim2.new(1, -16, 0, 1),
+        BackgroundColor3 = theme.border,
+        BorderSizePixel = 0,
+        LayoutOrder = (#self.tabs + 1) * 100 + 1,
+        Parent = self._tabStrip,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.6),
+            NumberSequenceKeypoint.new(0.5, 0),
+            NumberSequenceKeypoint.new(1, 0.6),
+        }),
+        Parent = line,
+    })
+end
+
+-- =====================================================================
 -- Visibility — Show / Hide / Toggle, animated to match the entrance.
 -- =====================================================================
 -- SetVisible(true)  scales the panel up from 0.92 + fades it in.
@@ -2749,7 +3451,12 @@ function OvertimeUI:CreateWindow(cfg)
     -- border, accent, text, ...) and they're merged over the defaults, so
     -- each script can give its menu a unique look. Accent stays as a
     -- dedicated shortcut.
-    if type(cfg.Theme) == "table" then
+    if type(cfg.Theme) == "string" and OvertimeUI.Themes[cfg.Theme] then
+        -- ProxyLib-compatible named theme ("Blue", "Red", "Purple", etc.)
+        for k, v in pairs(OvertimeUI.Themes[cfg.Theme]) do
+            if typeof(v) == "Color3" then self.theme[k] = v end
+        end
+    elseif type(cfg.Theme) == "table" then
         for k, v in pairs(cfg.Theme) do
             if typeof(v) == "Color3" then self.theme[k] = v end
         end
@@ -2831,6 +3538,18 @@ function OvertimeUI:CreateWindow(cfg)
     self.onCloseCallbacks  = {}
     self._cleanup          = {}
     self._destroyed        = false
+    -- AutoSave / AutoLoad
+    self._saveRegistry = {}
+    self._savedData    = nil
+    self._saveFile     = type(cfg.SaveFile) == "string" and cfg.SaveFile or nil
+    self._autoSave     = (cfg.AutoSave == true) and (self._saveFile ~= nil)
+    if self._saveFile and cfg.AutoLoad ~= false then
+        local ok, raw = pcall(readfile, self._saveFile)
+        if ok and raw and raw ~= "" then
+            local ok2, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if ok2 and type(data) == "table" then self._savedData = data end
+        end
+    end
 
     -- Marker — owned by the library. The script never needs to touch it.
     local marker = Instance.new("BoolValue")
@@ -4110,5 +4829,402 @@ OvertimeUI.Util = {
     Host          = makeHost,
     Keybind       = makeKeybind,
 }
+
+-- =========================================================================
+-- Key System — authentication card shown before the main UI.
+-- =========================================================================
+-- Usage:
+--     local KS = UI:CreateKeySystem({
+--         Title = "Key Verification",
+--         Theme = "Blue",  -- or a theme table
+--         Size  = Vector2.new(420, 265),
+--     })
+--     KS:CreateButton({ Description = "Verify", Callback = function()
+--         if KS:GetText() == "MY-KEY" then
+--             KS:Destroy()
+--             -- build main window here
+--         else
+--             KS:Notify({ Title = "Wrong key!", Duration = 3 })
+--         end
+--     end})
+--     KS:CreateSocialButton({ Type = "Discord", Link = "https://discord.gg/..." })
+function OvertimeUI:CreateKeySystem(cfg)
+    cfg = cfg or {}
+    applyStyle(defaultStyle())
+
+    -- Resolve theme
+    local theme = defaultTheme()
+    local ksTheme = cfg.Theme
+    if type(ksTheme) == "string" and OvertimeUI.Themes[ksTheme] then
+        for k, v in pairs(OvertimeUI.Themes[ksTheme]) do
+            if typeof(v) == "Color3" then theme[k] = v end
+        end
+    elseif type(ksTheme) == "table" then
+        for k, v in pairs(ksTheme) do
+            if typeof(v) == "Color3" then theme[k] = v end
+        end
+    end
+    if typeof(cfg.Accent) == "Color3" then theme.accent = cfg.Accent end
+
+    -- Card dimensions (accepts Vector2 or UDim2)
+    local cardW, cardH
+    if typeof(cfg.Size) == "Vector2" then
+        cardW, cardH = cfg.Size.X, cfg.Size.Y
+    elseif typeof(cfg.Size) == "UDim2" then
+        cardW = cfg.Size.X.Offset ~= 0 and cfg.Size.X.Offset or 420
+        cardH = cfg.Size.Y.Offset ~= 0 and cfg.Size.Y.Offset or 265
+    else
+        cardW, cardH = 420, 265
+    end
+
+    local parent = LP:FindFirstChild("PlayerGui") or game:GetService("CoreGui")
+    local gui = Create("ScreenGui", {
+        Name = "OvertimeUI_KeySystem",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        IgnoreGuiInset = true,
+        DisplayOrder = 200,
+        Parent = parent,
+    })
+
+    -- Dim backdrop
+    Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.45,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+        Parent = gui,
+    })
+
+    local card = Create("Frame", {
+        Size = UDim2.fromOffset(cardW, cardH),
+        Position = UDim2.new(0.5, -cardW/2, 0.5, -cardH/2),
+        BackgroundColor3 = theme.bg,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = gui,
+    })
+    corner(card, 10)
+    stroke(card, theme.borderHi, 1)
+    shadow(card, 30, 0.6)
+
+    -- Entrance animation
+    local ksScale = Create("UIScale", { Scale = 0.90, Parent = card })
+    card.BackgroundTransparency = 1
+    local entrInfo = TweenInfo.new(T_SLOW, SPRING, EASE_OUT)
+    TweenService:Create(ksScale, entrInfo, { Scale = 1 }):Play()
+    TweenService:Create(card, TweenInfo.new(T_SLOW, EASE, EASE_OUT),
+        { BackgroundTransparency = 0 }):Play()
+
+    -- Title bar
+    local TITLE_H = 46
+    do
+        local bar = Create("Frame", {
+            Size = UDim2.new(1, 0, 0, TITLE_H),
+            BackgroundTransparency = 1,
+            ZIndex = 3,
+            Parent = card,
+        })
+        local stripe = Create("Frame", {
+            Size = UDim2.fromOffset(4, 22),
+            Position = UDim2.new(0, 14, 0.5, -11),
+            BackgroundColor3 = theme.accent,
+            BorderSizePixel = 0,
+            ZIndex = 3,
+            Parent = bar,
+        })
+        corner(stripe, 2)
+
+        if cfg.Icon then
+            Create("ImageLabel", {
+                Size = UDim2.fromOffset(22, 22),
+                Position = UDim2.new(0, 26, 0.5, -11),
+                BackgroundTransparency = 1,
+                Image = tostring(cfg.Icon),
+                ZIndex = 3,
+                Parent = bar,
+            })
+        end
+
+        local titleX = cfg.Icon and 56 or 26
+        Create("TextLabel", {
+            Size = UDim2.new(1, -titleX - 12, 1, 0),
+            Position = UDim2.new(0, titleX, 0, 0),
+            BackgroundTransparency = 1,
+            Text = cfg.Title or "Key System",
+            TextColor3 = theme.text,
+            Font = FONT_BOLD,
+            TextSize = 16,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 3,
+            Parent = bar,
+        })
+    end
+
+    -- Separator
+    local sep = Create("Frame", {
+        Size = UDim2.new(1, -24, 0, 1),
+        Position = UDim2.new(0, 12, 0, TITLE_H),
+        BackgroundColor3 = theme.borderHi,
+        BorderSizePixel = 0,
+        ZIndex = 3,
+        Parent = card,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.15, 0),
+            NumberSequenceKeypoint.new(0.85, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Parent = sep,
+    })
+
+    -- "Enter Key" label + input
+    local INPUT_Y = TITLE_H + 12
+    Create("TextLabel", {
+        Size = UDim2.new(1, -32, 0, 14),
+        Position = UDim2.new(0, 16, 0, INPUT_Y),
+        BackgroundTransparency = 1,
+        Text = "Enter Key",
+        TextColor3 = theme.textDim,
+        Font = FONT_SEMI,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+        Parent = card,
+    })
+
+    local inputBox = Create("TextBox", {
+        Size = UDim2.new(1, -32, 0, 32),
+        Position = UDim2.new(0, 16, 0, INPUT_Y + 16),
+        BackgroundColor3 = theme.surface,
+        BorderSizePixel = 0,
+        Text = "",
+        PlaceholderText = "Enter your key here...",
+        PlaceholderColor3 = theme.textDim,
+        TextColor3 = theme.text,
+        Font = FONT,
+        TextSize = 13,
+        ClearTextOnFocus = false,
+        ZIndex = 3,
+        Parent = card,
+    })
+    corner(inputBox, 5)
+    local inputStroke = stroke(inputBox, theme.border, 1)
+    padding(inputBox, 0, 0, 10, 10)
+
+    inputBox.Focused:Connect(function()
+        tween(inputStroke, { Color = theme.accent }, T_FAST)
+    end)
+    inputBox.FocusLost:Connect(function()
+        tween(inputStroke, { Color = theme.border }, T_FAST)
+    end)
+
+    -- Inline notification slot (appears above the button area)
+    local NOTIF_Y = INPUT_Y + 56
+    local notifSlot = Create("Frame", {
+        Size = UDim2.new(1, -32, 0, 0),
+        Position = UDim2.new(0, 16, 0, NOTIF_Y),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        ZIndex = 4,
+        Parent = card,
+    })
+    Create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 4),
+        Parent = notifSlot,
+    })
+
+    -- Button grid
+    local BTN_Y = NOTIF_Y + 4
+    local btnFrame = Create("Frame", {
+        Size = UDim2.new(1, -32, 0, 0),
+        Position = UDim2.new(0, 16, 0, BTN_Y),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        ZIndex = 3,
+        Parent = card,
+    })
+    Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 8),
+        Wraps = true,
+        Parent = btnFrame,
+    })
+
+    -- Social buttons (pinned to bottom)
+    local socialFrame = Create("Frame", {
+        Size = UDim2.new(1, -32, 0, 28),
+        Position = UDim2.new(0, 16, 1, -40),
+        BackgroundTransparency = 1,
+        ZIndex = 3,
+        Parent = card,
+    })
+    Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 6),
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Parent = socialFrame,
+    })
+
+    local destroyed = false
+    local ks = {}
+
+    function ks:GetTextBox() return inputBox end
+    function ks:GetText()    return inputBox.Text end
+    function ks:SetText(t)   inputBox.Text = tostring(t) end
+
+    function ks:Notify(ncfg)
+        ncfg = ncfg or {}
+        local toast = Create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = theme.surface,
+            BorderSizePixel = 0,
+            Position = UDim2.new(1.2, 0, 0, 0),
+            LayoutOrder = 1,
+            ZIndex = 5,
+            Parent = notifSlot,
+        })
+        corner(toast, 4)
+        stroke(toast, theme.accent, 1)
+        padding(toast, 5, 5, 8, 8)
+        Create("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 2),
+            Parent = toast,
+        })
+        Create("TextLabel", {
+            Size = UDim2.new(1, 0, 0, 14),
+            BackgroundTransparency = 1,
+            Text = ncfg.Title or "",
+            TextColor3 = theme.accent,
+            Font = FONT_BOLD,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 1,
+            ZIndex = 5,
+            Parent = toast,
+        })
+        if ncfg.Description and ncfg.Description ~= "" then
+            Create("TextLabel", {
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                Text = ncfg.Description,
+                TextColor3 = theme.text,
+                Font = FONT,
+                TextSize = 11,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = 2,
+                ZIndex = 5,
+                Parent = toast,
+            })
+        end
+        TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            { Position = UDim2.new(0, 0, 0, 0) }):Play()
+        task.delay(ncfg.Duration or 3, function()
+            if not toast.Parent then return end
+            local out = TweenService:Create(toast,
+                TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+                { Position = UDim2.new(1.2, 0, 0, 0) })
+            out:Play()
+            out.Completed:Connect(function() pcall(function() toast:Destroy() end) end)
+        end)
+    end
+
+    function ks:Destroy()
+        if destroyed then return end
+        destroyed = true
+        TweenService:Create(ksScale, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            { Scale = 0.90 }):Play()
+        local out = TweenService:Create(card,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            { BackgroundTransparency = 1 })
+        out:Play()
+        out.Completed:Connect(function() pcall(function() gui:Destroy() end) end)
+    end
+
+    function ks:CreateButton(bcfg)
+        bcfg = bcfg or {}
+        local btnW = math.floor((cardW - 32 - 8) / 2)  -- two-column by default
+        local btn = Create("TextButton", {
+            Size = UDim2.fromOffset(btnW, 30),
+            BackgroundColor3 = theme.surface,
+            BorderSizePixel = 0,
+            Text = bcfg.Description or bcfg.Title or "Button",
+            TextColor3 = theme.text,
+            Font = FONT_SEMI,
+            TextSize = 13,
+            AutoButtonColor = false,
+            LayoutOrder = bcfg.Order or (#btnFrame:GetChildren()),
+            ZIndex = 4,
+            Parent = btnFrame,
+        })
+        corner(btn, 5)
+        local bs = stroke(btn, theme.border, 1)
+        btn.MouseEnter:Connect(function()
+            tween(btn, { BackgroundColor3 = theme.surfaceHi }, T_FAST)
+            tween(bs,  { Color = theme.borderHi }, T_FAST)
+        end)
+        btn.MouseLeave:Connect(function()
+            tween(btn, { BackgroundColor3 = theme.surface }, T_FAST)
+            tween(bs,  { Color = theme.border }, T_FAST)
+        end)
+        btn.MouseButton1Down:Connect(function()
+            tween(btn, { BackgroundColor3 = theme.surface }, 0.05)
+        end)
+        if bcfg.Callback then
+            btn.MouseButton1Click:Connect(function() task.spawn(bcfg.Callback) end)
+        end
+        local bh = {}
+        function bh:SetDescription(t) btn.Text = t end
+        function bh:SetTitle(t)       btn.Text = t end
+        function bh:GetFrame()        return btn end
+        return bh
+    end
+
+    local SOCIAL_LABELS = { Discord = "Discord", Youtube = "YouTube", Website = "Website" }
+    function ks:CreateSocialButton(scfg)
+        scfg = scfg or {}
+        local label = SOCIAL_LABELS[scfg.Type] or (scfg.Type or "Link")
+        local sbtn = Create("TextButton", {
+            Size = UDim2.fromOffset(84, 26),
+            BackgroundColor3 = theme.surface,
+            BorderSizePixel = 0,
+            Text = label,
+            TextColor3 = theme.textDim,
+            Font = FONT_SEMI,
+            TextSize = 11,
+            AutoButtonColor = false,
+            LayoutOrder = scfg.Order or 0,
+            ZIndex = 4,
+            Parent = socialFrame,
+        })
+        corner(sbtn, 4)
+        local sbs = stroke(sbtn, theme.border, 1)
+        sbtn.MouseEnter:Connect(function()
+            tween(sbtn, { BackgroundColor3 = theme.surfaceHi, TextColor3 = theme.text }, T_FAST)
+            tween(sbs,  { Color = theme.borderHi }, T_FAST)
+        end)
+        sbtn.MouseLeave:Connect(function()
+            tween(sbtn, { BackgroundColor3 = theme.surface, TextColor3 = theme.textDim }, T_FAST)
+            tween(sbs,  { Color = theme.border }, T_FAST)
+        end)
+        sbtn.MouseButton1Click:Connect(function()
+            if scfg.Link and type(setclipboard) == "function" then
+                pcall(setclipboard, scfg.Link)
+            end
+        end)
+    end
+
+    return ks
+end
 
 return OvertimeUI
