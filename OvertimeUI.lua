@@ -3309,6 +3309,57 @@ function Window:CreateSidebarLine()
     })
 end
 
+-- Window:SetDiscord(url)
+-- Pins a Discord button at the bottom of the left-layout sidebar.
+-- Clicking it copies `url` to the clipboard and shows a toast.
+-- No-op in top/panel layouts (no sidebar).
+function Window:SetDiscord(url)
+    if not self._tabStrip then return end
+    local theme = self.theme
+
+    -- Thin divider above the button
+    local line = Create("Frame", {
+        Size = UDim2.new(1, -16, 0, 1),
+        BackgroundColor3 = theme.border,
+        BorderSizePixel = 0,
+        LayoutOrder = 99998,
+        Parent = self._tabStrip,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.6),
+            NumberSequenceKeypoint.new(0.5, 0),
+            NumberSequenceKeypoint.new(1, 0.6),
+        }),
+        Parent = line,
+    })
+
+    local btn = Create("TextButton", {
+        Size = UDim2.new(1, -16, 0, 26),
+        BackgroundColor3 = Color3.fromRGB(88, 101, 242),
+        BorderSizePixel = 0,
+        Text = "Discord",
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = FONT_BOLD,
+        TextSize = 11,
+        AutoButtonColor = false,
+        LayoutOrder = 99999,
+        Parent = self._tabStrip,
+    })
+    corner(btn, 6)
+
+    btn.MouseEnter:Connect(function()
+        tween(btn, { BackgroundColor3 = Color3.fromRGB(71, 82, 196) }, T_FAST)
+    end)
+    btn.MouseLeave:Connect(function()
+        tween(btn, { BackgroundColor3 = Color3.fromRGB(88, 101, 242) }, T_FAST)
+    end)
+    btn.MouseButton1Click:Connect(function()
+        pcall(setclipboard, url)
+        OvertimeUI:Notify({ Title = "Discord", Content = "Invite link copied to clipboard!", Duration = 3 })
+    end)
+end
+
 -- =====================================================================
 -- Visibility — Show / Hide / Toggle, animated to match the entrance.
 -- =====================================================================
