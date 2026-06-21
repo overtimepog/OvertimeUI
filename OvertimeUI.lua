@@ -3315,50 +3315,70 @@ end
 -- Clicking it copies `url` to the clipboard and shows a toast.
 -- No-op in top/panel layouts (no sidebar).
 function Window:SetDiscord(url)
-    if not self._tabStrip then return end
     local theme = self.theme
-
-    -- Thin divider above the button
-    local line = Create("Frame", {
-        Size = UDim2.new(1, -16, 0, 1),
-        BackgroundColor3 = theme.border,
-        BorderSizePixel = 0,
-        LayoutOrder = 99998,
-        Parent = self._tabStrip,
-    })
-    Create("UIGradient", {
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.6),
-            NumberSequenceKeypoint.new(0.5, 0),
-            NumberSequenceKeypoint.new(1, 0.6),
-        }),
-        Parent = line,
-    })
-
-    local btn = Create("TextButton", {
-        Size = UDim2.new(1, -16, 0, 26),
-        BackgroundColor3 = Color3.fromRGB(88, 101, 242),
-        BorderSizePixel = 0,
-        Text = "Discord",
-        TextColor3 = Color3.new(1, 1, 1),
-        Font = FONT_BOLD,
-        TextSize = 11,
-        AutoButtonColor = false,
-        LayoutOrder = 99999,
-        Parent = self._tabStrip,
-    })
-    corner(btn, 6)
-
-    btn.MouseEnter:Connect(function()
-        tween(btn, { BackgroundColor3 = Color3.fromRGB(71, 82, 196) }, T_FAST)
-    end)
-    btn.MouseLeave:Connect(function()
-        tween(btn, { BackgroundColor3 = Color3.fromRGB(88, 101, 242) }, T_FAST)
-    end)
-    btn.MouseButton1Click:Connect(function()
+    local DISCORD = Color3.fromRGB(88, 101, 242)
+    local DISCORD_HI = Color3.fromRGB(71, 82, 196)
+    local function onClick()
         pcall(setclipboard, url)
         OvertimeUI:Notify({ Title = "Discord", Content = "Invite link copied to clipboard!", Duration = 3 })
-    end)
+    end
+
+    if self._topLayout and self._titleBar then
+        -- Top layout: compact pill button in the title bar, left of minimize/close.
+        local titleH = self._titleBar.Size.Y.Offset
+        local btnY   = math.max(0, math.floor((titleH - 24) / 2))
+        local btn = Create("TextButton", {
+            Size     = UDim2.fromOffset(60, 24),
+            Position = UDim2.new(1, -122, 0, btnY),
+            BackgroundColor3 = DISCORD,
+            BorderSizePixel  = 0,
+            Text = "Discord",
+            TextColor3 = Color3.new(1, 1, 1),
+            Font = FONT_BOLD,
+            TextSize = 11,
+            AutoButtonColor = false,
+            ZIndex = 4,
+            Parent = self._titleBar,
+        })
+        corner(btn, 6)
+        btn.MouseEnter:Connect(function() tween(btn, { BackgroundColor3 = DISCORD_HI }, T_FAST) end)
+        btn.MouseLeave:Connect(function() tween(btn, { BackgroundColor3 = DISCORD }, T_FAST) end)
+        btn.MouseButton1Click:Connect(onClick)
+
+    elseif self._tabStrip and not self._topLayout then
+        -- Left layout: Discord button pinned to the bottom of the sidebar.
+        local line = Create("Frame", {
+            Size = UDim2.new(1, -16, 0, 1),
+            BackgroundColor3 = theme.border,
+            BorderSizePixel = 0,
+            LayoutOrder = 99998,
+            Parent = self._tabStrip,
+        })
+        Create("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.6),
+                NumberSequenceKeypoint.new(0.5, 0),
+                NumberSequenceKeypoint.new(1, 0.6),
+            }),
+            Parent = line,
+        })
+        local btn = Create("TextButton", {
+            Size = UDim2.new(1, -16, 0, 26),
+            BackgroundColor3 = DISCORD,
+            BorderSizePixel = 0,
+            Text = "Discord",
+            TextColor3 = Color3.new(1, 1, 1),
+            Font = FONT_BOLD,
+            TextSize = 11,
+            AutoButtonColor = false,
+            LayoutOrder = 99999,
+            Parent = self._tabStrip,
+        })
+        corner(btn, 6)
+        btn.MouseEnter:Connect(function() tween(btn, { BackgroundColor3 = DISCORD_HI }, T_FAST) end)
+        btn.MouseLeave:Connect(function() tween(btn, { BackgroundColor3 = DISCORD }, T_FAST) end)
+        btn.MouseButton1Click:Connect(onClick)
+    end
 end
 
 -- =====================================================================
@@ -3715,6 +3735,7 @@ function OvertimeUI:CreateWindow(cfg)
         ZIndex = 3,
         Parent = panel,
     })
+    self._titleBar = titleBar
 
     -- A title icon (logo) takes the place of the accent stripe when present.
     local textLeft = 24
@@ -3858,6 +3879,7 @@ function OvertimeUI:CreateWindow(cfg)
         self._panelLayout = true
         self._panelTab    = nil
     elseif topTabs then
+        self._topLayout = true
         -- Horizontal tab bar across the top of the content area.
         tabStrip = Create("Frame", {
             Name = "TabStrip",
