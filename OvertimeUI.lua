@@ -3323,22 +3323,19 @@ function Window:SetDiscord(url)
         OvertimeUI:Notify({ Title = "Discord", Content = "Invite link copied to clipboard!", Duration = 3 })
     end
 
-    if self._topLayout and self._titleBar then
-        -- Top layout: compact pill button in the title bar, left of minimize/close.
-        local titleH = self._titleBar.Size.Y.Offset
-        local btnY   = math.max(0, math.floor((titleH - 24) / 2))
+    if self._tabStrip and self._topLayout then
+        -- Top layout: Discord button appended after all tabs in the horizontal strip.
         local btn = Create("TextButton", {
-            Size     = UDim2.fromOffset(60, 24),
-            Position = UDim2.new(1, -122, 0, btnY),
+            Size             = UDim2.new(0, 60, 1, -8),
             BackgroundColor3 = DISCORD,
             BorderSizePixel  = 0,
-            Text = "Discord",
-            TextColor3 = Color3.new(1, 1, 1),
-            Font = FONT_BOLD,
-            TextSize = 11,
-            AutoButtonColor = false,
-            ZIndex = 4,
-            Parent = self._titleBar,
+            Text             = "Discord",
+            TextColor3       = Color3.new(1, 1, 1),
+            Font             = FONT_BOLD,
+            TextSize         = 11,
+            AutoButtonColor  = false,
+            LayoutOrder      = 99999,
+            Parent           = self._tabStrip,
         })
         corner(btn, 6)
         btn.MouseEnter:Connect(function() tween(btn, { BackgroundColor3 = DISCORD_HI }, T_FAST) end)
