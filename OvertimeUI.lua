@@ -29,7 +29,7 @@
 -- from scripts only hits the HTTP bridge 20 times per second.
 
 local OvertimeUI = {}
-OvertimeUI._VERSION = "0.6.0"
+OvertimeUI._VERSION = "0.6.1"
 
 -- =========================================================================
 -- Services & shared state
@@ -1059,8 +1059,10 @@ function Section:CreateSlider(cfg)
 
     if cfg.SaveId and window._registerSave then
         window:_registerSave(cfg.SaveId, "number",
+            -- fire the callback on autoload (2nd arg) so the consuming script's state
+            -- syncs to the restored value, matching toggles/dropdowns; no animation.
             function() return value end,
-            function(v) setValue(tonumber(v) or value, false, false) end)
+            function(v) setValue(tonumber(v) or value, true, false) end)
     end
     return handle
 end
@@ -1898,7 +1900,11 @@ function Section:CreateInput(cfg)
     if cfg.SaveId and window._registerSave then
         window:_registerSave(cfg.SaveId, "string",
             function() return currentText end,
-            function(v) if type(v) == "string" then currentText = v; box.Text = v end end)
+            -- fire the callback on autoload so the consuming script's state syncs to the
+            -- restored value (toggles already do); without this the box shows the saved
+            -- value while the script keeps its default.
+            function(v) if type(v) == "string" then currentText = v; box.Text = v
+                if cfg.Callback then task.spawn(cfg.Callback, v) end end end)
     end
     return handle
 end
@@ -2313,6 +2319,8 @@ function Section:CreateTextBox(cfg)
             function(v)
                 if type(v) == "string" then
                     currentText = v; box.Text = v; updateCounter(v)
+                    -- fire on autoload so the script's state syncs to the restored value
+                    if cfg.Callback then task.spawn(cfg.Callback, v) end
                 end
             end)
     end
