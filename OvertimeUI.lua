@@ -3443,19 +3443,35 @@ end
 function Window:_registerSave(saveId, valueType, getter, setter)
     self._saveRegistry[saveId] = { get = getter, set = setter, vtype = valueType }
     if self._savedData and self._savedData[saveId] ~= nil then
+        -- The restore fires the control's callback, which triggers an autosave.
+        -- Suppress it: a Save() mid-build sees a partially-populated registry and
+        -- would silently drop every not-yet-created control's value from the file
+        -- (the last-created control loses its setting on every fresh load).
+        local prev = self._restoring
+        self._restoring = true
         pcall(setter, self._savedData[saveId])
+        self._restoring = prev
     end
 end
 
 function Window:Save()
-    if not self._saveFile then return end
+    if not self._saveFile or self._restoring then return end
+    -- Merge over the values loaded from disk, so keys for controls that aren't
+    -- registered in this window (not created yet, or a per-place UI variant)
+    -- survive the rewrite instead of being dropped.
     local data = {}
+    if type(self._savedData) == "table" then
+        for id, val in pairs(self._savedData) do data[id] = val end
+    end
     for id, entry in pairs(self._saveRegistry) do
         local ok, val = pcall(entry.get)
         if ok then data[id] = val end
     end
     local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
-    if ok then pcall(writefile, self._saveFile, encoded) end
+    if ok then
+        pcall(writefile, self._saveFile, encoded)
+        self._savedData = data -- keep the merge base in sync with what's on disk
+    end
 end
 
 function Window:Load()
@@ -3465,10 +3481,13 @@ function Window:Load()
     local ok2, data = pcall(function() return HttpService:JSONDecode(raw) end)
     if ok2 and type(data) == "table" then
         self._savedData = data
+        local prev = self._restoring
+        self._restoring = true -- same mid-restore autosave suppression as _registerSave
         for id, value in pairs(data) do
             local entry = self._saveRegistry[id]
             if entry then pcall(entry.set, value) end
         end
+        self._restoring = prev
     end
 end
 
