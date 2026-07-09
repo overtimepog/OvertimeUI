@@ -106,6 +106,8 @@ local function defaultStyle()
         shadow      = true,                    -- soft drop behind the panel
         sheen       = true,                    -- top-lit gradient on the panel
         stripe      = true,                    -- accent stripe in the title bar
+        headerFill  = false,                   -- fill the whole title bar with the accent (colored header)
+        headerFillTransparency = 0,            -- 0 = solid accent header, higher = subtler tint
         sheenStrength      = 0.05,             -- how pronounced the panel sheen is
         shadowSpread       = 30,               -- how far the drop shadow bleeds out
         shadowTransparency = 0.65,             -- how faint the drop shadow is
@@ -221,6 +223,70 @@ OvertimeUI.Themes = {
         accent = rgb(255, 170, 50), accentDim = rgb(150, 100, 30), accentGlow = rgb(255, 200, 110),
         text = rgb(250, 240, 226), textDim = rgb(168, 148, 120),
     },
+    -- Cyberpunk near-black with a neon-green accent.
+    Neon = {
+        bg = rgb(6, 8, 8), bgAlt = rgb(10, 14, 13), surface = rgb(14, 22, 20),
+        surfaceHi = rgb(20, 34, 30), border = rgb(22, 44, 38), borderHi = rgb(40, 110, 90),
+        accent = rgb(57, 255, 140), accentDim = rgb(28, 120, 74), accentGlow = rgb(120, 255, 180),
+        text = rgb(220, 255, 238), textDim = rgb(96, 140, 120),
+    },
+    -- Synthwave: deep purple/navy with hot magenta.
+    Vapor = {
+        bg = rgb(16, 10, 28), bgAlt = rgb(22, 14, 38), surface = rgb(34, 20, 54),
+        surfaceHi = rgb(50, 30, 78), border = rgb(58, 32, 88), borderHi = rgb(120, 60, 170),
+        accent = rgb(255, 80, 200), accentDim = rgb(150, 40, 120), accentGlow = rgb(120, 160, 255),
+        text = rgb(244, 228, 255), textDim = rgb(160, 130, 190),
+    },
+    -- Deep blood-red.
+    Crimson = {
+        bg = rgb(16, 8, 9), bgAlt = rgb(24, 10, 12), surface = rgb(38, 16, 18),
+        surfaceHi = rgb(56, 22, 24), border = rgb(60, 22, 24), borderHi = rgb(140, 44, 48),
+        accent = rgb(230, 40, 50), accentDim = rgb(130, 30, 36), accentGlow = rgb(255, 80, 90),
+        text = rgb(250, 228, 228), textDim = rgb(170, 120, 122),
+    },
+    -- Black & gold.
+    Gold = {
+        bg = rgb(14, 12, 8), bgAlt = rgb(20, 17, 10), surface = rgb(32, 27, 16),
+        surfaceHi = rgb(48, 40, 22), border = rgb(52, 44, 24), borderHi = rgb(130, 108, 50),
+        accent = rgb(238, 190, 80), accentDim = rgb(140, 110, 44), accentGlow = rgb(255, 215, 120),
+        text = rgb(248, 242, 226), textDim = rgb(166, 150, 116),
+    },
+    -- Deep navy with a bright cyan.
+    Ocean = {
+        bg = rgb(7, 14, 24), bgAlt = rgb(10, 20, 34), surface = rgb(16, 32, 52),
+        surfaceHi = rgb(24, 48, 76), border = rgb(26, 50, 78), borderHi = rgb(44, 96, 150),
+        accent = rgb(40, 180, 235), accentDim = rgb(24, 100, 140), accentGlow = rgb(90, 210, 255),
+        text = rgb(224, 240, 250), textDim = rgb(120, 150, 178),
+    },
+    -- Charcoal with molten orange.
+    Ember = {
+        bg = rgb(18, 10, 6), bgAlt = rgb(26, 14, 8), surface = rgb(40, 22, 12),
+        surfaceHi = rgb(58, 32, 16), border = rgb(60, 32, 16), borderHi = rgb(140, 78, 36),
+        accent = rgb(255, 120, 40), accentDim = rgb(150, 72, 26), accentGlow = rgb(255, 150, 80),
+        text = rgb(250, 234, 222), textDim = rgb(170, 134, 110),
+    },
+    -- ===== LIGHT themes (dark text on light surfaces) — a whole different feel =====
+    -- Clean white, blue accent.
+    Paper = {
+        bg = rgb(236, 238, 243), bgAlt = rgb(228, 231, 238), surface = rgb(248, 249, 252),
+        surfaceHi = rgb(255, 255, 255), border = rgb(208, 213, 224), borderHi = rgb(148, 158, 178),
+        accent = rgb(56, 120, 246), accentDim = rgb(170, 198, 250), accentGlow = rgb(120, 165, 255),
+        text = rgb(26, 30, 40), textDim = rgb(108, 116, 134), shadow = rgb(120, 130, 150),
+    },
+    -- Cool light blue-grey, teal accent.
+    Frost = {
+        bg = rgb(232, 238, 240), bgAlt = rgb(224, 232, 235), surface = rgb(244, 249, 250),
+        surfaceHi = rgb(255, 255, 255), border = rgb(200, 214, 218), borderHi = rgb(130, 166, 174),
+        accent = rgb(20, 170, 180), accentDim = rgb(150, 210, 214), accentGlow = rgb(90, 220, 228),
+        text = rgb(24, 34, 38), textDim = rgb(96, 116, 122), shadow = rgb(110, 128, 132),
+    },
+    -- Warm cream, amber accent.
+    Sand = {
+        bg = rgb(240, 235, 226), bgAlt = rgb(233, 227, 215), surface = rgb(250, 246, 238),
+        surfaceHi = rgb(255, 253, 248), border = rgb(220, 210, 192), borderHi = rgb(176, 158, 126),
+        accent = rgb(214, 140, 40), accentDim = rgb(232, 204, 150), accentGlow = rgb(245, 190, 110),
+        text = rgb(46, 38, 26), textDim = rgb(128, 116, 96), shadow = rgb(150, 138, 116),
+    },
 }
 
 -- ProxyLib-compatible named theme aliases. Pass Theme = "Blue" (etc.) to CreateWindow
@@ -296,6 +362,55 @@ OvertimeUI.Presets = {
         AccentGradient = { rgb(0, 224, 200), rgb(60, 140, 255) },
         Roundness = 1.8, PanelTransparency = 0.22, Animation = 0.8,
         GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+    -- Cyberpunk: near-black, neon-green glow, tight and sharp.
+    Neon = {
+        Theme = OvertimeUI.Themes.Neon,
+        AccentGradient = { rgb(57, 255, 140), rgb(0, 220, 200) },
+        Roundness = 0.5, Animation = 0.6, StrokeThickness = 1.5,
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+        TabWidth = 108, TabHeight = 26, Spacing = 1,
+    },
+    -- Synthwave: purple→cyan gradient sweep, roomy and glassy.
+    Synthwave = {
+        Theme = OvertimeUI.Themes.Vapor,
+        AccentGradient = { rgb(255, 80, 200), rgb(120, 120, 255), rgb(0, 220, 255) },
+        Roundness = 1.5, PanelTransparency = 0.08, Animation = 0.9, TitleAlign = "center",
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+    -- Clean light: white surfaces, top tab bar, flat and airy.
+    Paper = {
+        Theme = OvertimeUI.Themes.Paper,
+        Layout = "top", TitleAlign = "center", Roundness = 0.9,
+        Sheen = false, Animation = 0.7, Spacing = 3, BodyPadding = 14,
+    },
+    -- Brutalist: hard corners, chunky mono, a solid accent header, zero glow.
+    Brutalist = {
+        Theme = OvertimeUI.Themes.Mono,
+        Font = Enum.Font.Code, FontBold = Enum.Font.Code, FontSemi = Enum.Font.Code,
+        Roundness = 0, StrokeThickness = 2.5, Animation = 0.4,
+        Shadow = false, Sheen = false, Stripe = false,
+        HeaderFill = true, TitleAlign = "center",
+        TabWidth = 100, TabHeight = 24, BodyPadding = 8, Spacing = 1,
+    },
+    -- Ghost: barely-there translucent panel, no decorations.
+    Ghost = {
+        Theme = OvertimeUI.Themes.Dark,
+        Roundness = 1.2, PanelTransparency = 0.4, Animation = 0.8,
+        Shadow = false, Sheen = false, Stripe = false,
+    },
+    -- Holographic: iridescent tri-colour accent on translucent midnight glass.
+    Holographic = {
+        Theme = OvertimeUI.Themes.Midnight,
+        AccentGradient = { rgb(0, 230, 255), rgb(180, 120, 255), rgb(255, 120, 200) },
+        Roundness = 1.7, PanelTransparency = 0.16, Animation = 0.85, TitleAlign = "center",
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
+    },
+    -- Commander: solid accent-filled header bar over a deep-ocean panel.
+    Commander = {
+        Theme = OvertimeUI.Themes.Ocean,
+        HeaderFill = true, TitleAlign = "center", Roundness = 0.8,
+        AccentGlow = true, Animation = 0.7, TitleHeight = 40,
     },
 }
 
@@ -3575,6 +3690,8 @@ function OvertimeUI:CreateWindow(cfg)
         local sh = pick(cfg.Shadow, st.shadow); self.style.shadow = (sh ~= false)
         local sn = pick(cfg.Sheen,  st.sheen);  self.style.sheen  = (sn ~= false)
         local sp = pick(cfg.Stripe, st.stripe); self.style.stripe = (sp ~= false)
+        local hf = pick(cfg.HeaderFill, st.headerFill); self.style.headerFill = (hf == true)
+        self.style.headerFillTransparency = num(cfg.HeaderFillTransparency, st.headerFillTransparency) or self.style.headerFillTransparency
 
         -- Depth flags default OFF, so they only turn on when explicitly enabled.
         self.style.gradientStroke = pick(cfg.GradientStroke, st.gradientStroke) == true
@@ -3742,6 +3859,40 @@ function OvertimeUI:CreateWindow(cfg)
     })
     self._titleBar = titleBar
 
+    -- Accent-filled header: paint the whole title bar with the accent so the
+    -- window reads as a "colored header" card instead of a flat dark panel.
+    -- Rounded to match the panel's top corners, with a square-off frame so the
+    -- bottom edge stays flush against the content. Title text flips to a colour
+    -- that contrasts the accent's luminance so it stays legible.
+    if S.headerFill then
+        local ht = math.clamp(S.headerFillTransparency or 0, 0, 1)
+        local hfill = Create("Frame", {
+            Name = "HeaderFill",
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = self.theme.accent,
+            BackgroundTransparency = ht,
+            BorderSizePixel = 0,
+            ZIndex = 2,
+            Parent = titleBar,
+        })
+        corner(hfill, 10)
+        applyAccentGradient(hfill, self.accentGradient, 0)
+        local hcover = Create("Frame", {
+            Size = UDim2.new(1, 0, 0.5, 0),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            BackgroundColor3 = self.theme.accent,
+            BackgroundTransparency = ht,
+            BorderSizePixel = 0,
+            ZIndex = 2,
+            Parent = hfill,
+        })
+        applyAccentGradient(hcover, self.accentGradient, 0)
+        local a = self.theme.accent
+        local lum = (0.299 * a.R + 0.587 * a.G + 0.114 * a.B)
+        self._titleTextColor = (lum > 0.62) and Color3.fromRGB(18, 19, 24) or Color3.fromRGB(246, 247, 251)
+        self._subTextColor   = self._titleTextColor
+    end
+
     -- A title icon (logo) takes the place of the accent stripe when present.
     local textLeft = 24
     if S.titleIcon then
@@ -3763,7 +3914,7 @@ function OvertimeUI:CreateWindow(cfg)
             BackgroundColor3 = self.theme.accent,
             BorderSizePixel = 0,
             ZIndex = 3,
-            Visible = S.stripe,
+            Visible = S.stripe and not S.headerFill,
             Parent = titleBar,
         })
         corner(accentStripe, 2)
@@ -3779,7 +3930,7 @@ function OvertimeUI:CreateWindow(cfg)
         Position = UDim2.new(0, titleX, 0, cfg.SubTitle and math.floor(titleH * 0.12) or 0),
         BackgroundTransparency = 1,
         Text = name,
-        TextColor3 = self.theme.text,
+        TextColor3 = self._titleTextColor or self.theme.text,
         Font = FONT_BOLD,
         TextSize = 15,
         TextXAlignment = titleXAlign,
@@ -3793,7 +3944,7 @@ function OvertimeUI:CreateWindow(cfg)
             Position = UDim2.new(0, titleX, 0, math.floor(titleH * 0.56)),
             BackgroundTransparency = 1,
             Text = tostring(cfg.SubTitle),
-            TextColor3 = self.theme.textDim,
+            TextColor3 = self._subTextColor or self.theme.textDim,
             Font = FONT,
             TextSize = 11,
             TextXAlignment = titleXAlign,
