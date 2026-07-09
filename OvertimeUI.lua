@@ -273,19 +273,19 @@ OvertimeUI.Themes = {
         accent = rgb(52, 112, 232), accentDim = rgb(166, 192, 244), accentGlow = rgb(120, 165, 255),
         text = rgb(30, 34, 44), textDim = rgb(104, 112, 130), shadow = rgb(118, 128, 148),
     },
-    -- Cool light blue-grey, teal accent.
+    -- Cool light blue-grey, teal accent (dimmed so it doesn't glare).
     Frost = {
-        bg = rgb(232, 238, 240), bgAlt = rgb(224, 232, 235), surface = rgb(244, 249, 250),
-        surfaceHi = rgb(255, 255, 255), border = rgb(200, 214, 218), borderHi = rgb(130, 166, 174),
-        accent = rgb(20, 170, 180), accentDim = rgb(150, 210, 214), accentGlow = rgb(90, 220, 228),
-        text = rgb(24, 34, 38), textDim = rgb(96, 116, 122), shadow = rgb(110, 128, 132),
+        bg = rgb(216, 224, 227), bgAlt = rgb(207, 217, 221), surface = rgb(226, 234, 236),
+        surfaceHi = rgb(236, 243, 244), border = rgb(188, 202, 206), borderHi = rgb(122, 156, 164),
+        accent = rgb(18, 158, 168), accentDim = rgb(148, 204, 208), accentGlow = rgb(90, 220, 228),
+        text = rgb(26, 36, 40), textDim = rgb(92, 112, 118), shadow = rgb(108, 126, 130),
     },
-    -- Warm cream, amber accent.
+    -- Warm cream, amber accent (dimmed so it doesn't glare).
     Sand = {
-        bg = rgb(240, 235, 226), bgAlt = rgb(233, 227, 215), surface = rgb(250, 246, 238),
-        surfaceHi = rgb(255, 253, 248), border = rgb(220, 210, 192), borderHi = rgb(176, 158, 126),
-        accent = rgb(214, 140, 40), accentDim = rgb(232, 204, 150), accentGlow = rgb(245, 190, 110),
-        text = rgb(46, 38, 26), textDim = rgb(128, 116, 96), shadow = rgb(150, 138, 116),
+        bg = rgb(226, 220, 209), bgAlt = rgb(218, 211, 198), surface = rgb(234, 229, 219),
+        surfaceHi = rgb(243, 238, 229), border = rgb(206, 196, 178), borderHi = rgb(168, 150, 118),
+        accent = rgb(204, 132, 36), accentDim = rgb(224, 196, 144), accentGlow = rgb(245, 190, 110),
+        text = rgb(48, 40, 28), textDim = rgb(122, 110, 90), shadow = rgb(146, 134, 112),
     },
 }
 
