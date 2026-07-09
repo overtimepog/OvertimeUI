@@ -342,11 +342,12 @@ OvertimeUI.Presets = {
         TabWidth = 96, TabHeight = 24, BodyPadding = 8, Spacing = 1,
         Sheen = false, Shadow = false,
     },
-    -- Compact cheat-menu palette meant to be paired with two-column groupboxes.
+    -- Compact cheat-menu: two-column groupbox body (Linoria-style) via CreateSection.
     Compact = {
         Theme = OvertimeUI.Themes.Mono,
         Accent = rgb(120, 200, 255),
-        Roundness = 0.5, TabWidth = 104, TabHeight = 26, BodyPadding = 8, Spacing = 1,
+        Layout = "columns",
+        Roundness = 0.5, TabHeight = 26, BodyPadding = 8, Spacing = 1,
         GradientStroke = true,
     },
     -- Warm, roomy, languid — soft and unhurried.
@@ -371,11 +372,11 @@ OvertimeUI.Presets = {
         GradientStroke = true, AccentGlow = true, GradientFill = true,
         TabWidth = 108, TabHeight = 26, Spacing = 1,
     },
-    -- Synthwave: purple→cyan gradient sweep, roomy and glassy, bottom tab bar.
+    -- Synthwave: purple→cyan gradient sweep, roomy and glassy, top tab bar.
     Synthwave = {
         Theme = OvertimeUI.Themes.Vapor,
         AccentGradient = { rgb(255, 80, 200), rgb(120, 120, 255), rgb(0, 220, 255) },
-        Layout = "bottom",
+        Layout = "top",
         Roundness = 1.5, PanelTransparency = 0.08, Animation = 0.9, TitleAlign = "center",
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
@@ -417,6 +418,15 @@ OvertimeUI.Presets = {
         Theme = OvertimeUI.Themes.Ocean,
         HeaderFill = true, TitleAlign = "center", Roundness = 0.8,
         AccentGlow = true, Animation = 0.7, TitleHeight = 40,
+    },
+    -- Cheat: Linoria-style dense two-column groupbox menu with top tabs, sharp
+    -- corners and hairline frames. CreateSection() auto-flows into the columns.
+    Cheat = {
+        Theme = OvertimeUI.Themes.Mono,
+        Accent = rgb(180, 120, 255),
+        Layout = "columns",
+        Roundness = 0.4, StrokeThickness = 1, Animation = 0.5,
+        TabHeight = 24, BodyPadding = 8, Spacing = 2, Sheen = false,
     },
 }
 
@@ -2888,6 +2898,13 @@ Tab.__index = Tab
 
 function Tab:CreateSection(name)
     local window = self.window
+    -- "columns" layout turns every section into an alternating left/right
+    -- groupbox CARD — a Linoria-style two-column cheat menu — WITHOUT the script
+    -- changing its API. A preset alone flips the whole menu's kind this way.
+    if window.style and window.style.layout == "columns" and not self._panelLayout then
+        self._colFlip = not self._colFlip
+        return self:CreateGroupbox(self._colFlip and "left" or "right", name or "")
+    end
     local theme  = window.theme
     if window.style then applyStyle(window.style) end
 
@@ -3151,7 +3168,7 @@ function Window:CreateTab(name, opts)
         return tab
     end
 
-    local topTabs  = (self.style.layout == "top" or self.style.layout == "bottom")
+    local topTabs  = (self.style.layout == "top" or self.style.layout == "bottom" or self.style.layout == "columns")
     local tabHeight = math.max(20, math.floor(self.style.tabHeight))
 
     -- Tab strip button. The label is a separate child TextLabel (not button.Text)
@@ -3719,7 +3736,7 @@ function OvertimeUI:CreateWindow(cfg)
         self.style.spacing            = num(cfg.Spacing,         st.spacing)           or self.style.spacing
 
         local layout = pick(cfg.Layout, st.layout)
-        if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" then self.style.layout = layout end
+        if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" or layout == "columns" then self.style.layout = layout end
         local talign = pick(cfg.TitleAlign, st.titleAlign)
         if talign == "center" or talign == "left" then self.style.titleAlign = talign end
 
@@ -3778,7 +3795,7 @@ function OvertimeUI:CreateWindow(cfg)
     local titleH   = math.max(20, math.floor(S.titleHeight))
     local panelT      = math.clamp(S.panelTransparency or 0, 0, 1)
     local panelLayout = (S.layout == "panel")
-    local topTabs     = (S.layout == "top")
+    local topTabs     = (S.layout == "top" or S.layout == "columns")  -- columns = top strip + 2-col body
     local bottomTabs  = (S.layout == "bottom")
     local tabW     = math.max(48, math.floor(S.tabWidth))
     local topStripH = math.max(24, math.floor(S.tabHeight) + 8) -- top-layout strip height
