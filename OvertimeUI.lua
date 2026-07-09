@@ -266,12 +266,12 @@ OvertimeUI.Themes = {
         text = rgb(250, 234, 222), textDim = rgb(170, 134, 110),
     },
     -- ===== LIGHT themes (dark text on light surfaces) — a whole different feel =====
-    -- Clean white, blue accent.
+    -- Soft muted light-grey, blue accent (dimmed so it doesn't glare).
     Paper = {
-        bg = rgb(236, 238, 243), bgAlt = rgb(228, 231, 238), surface = rgb(248, 249, 252),
-        surfaceHi = rgb(255, 255, 255), border = rgb(208, 213, 224), borderHi = rgb(148, 158, 178),
-        accent = rgb(56, 120, 246), accentDim = rgb(170, 198, 250), accentGlow = rgb(120, 165, 255),
-        text = rgb(26, 30, 40), textDim = rgb(108, 116, 134), shadow = rgb(120, 130, 150),
+        bg = rgb(220, 223, 230), bgAlt = rgb(211, 215, 223), surface = rgb(230, 233, 239),
+        surfaceHi = rgb(240, 242, 247), border = rgb(194, 200, 212), borderHi = rgb(138, 148, 168),
+        accent = rgb(52, 112, 232), accentDim = rgb(166, 192, 244), accentGlow = rgb(120, 165, 255),
+        text = rgb(30, 34, 44), textDim = rgb(104, 112, 130), shadow = rgb(118, 128, 148),
     },
     -- Cool light blue-grey, teal accent.
     Frost = {
