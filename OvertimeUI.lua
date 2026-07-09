@@ -371,11 +371,11 @@ OvertimeUI.Presets = {
         GradientStroke = true, AccentGlow = true, GradientFill = true,
         TabWidth = 108, TabHeight = 26, Spacing = 1,
     },
-    -- Synthwave: purple→cyan gradient sweep, roomy and glassy, top tab bar.
+    -- Synthwave: purple→cyan gradient sweep, roomy and glassy, bottom tab bar.
     Synthwave = {
         Theme = OvertimeUI.Themes.Vapor,
         AccentGradient = { rgb(255, 80, 200), rgb(120, 120, 255), rgb(0, 220, 255) },
-        Layout = "top",
+        Layout = "bottom",
         Roundness = 1.5, PanelTransparency = 0.08, Animation = 0.9, TitleAlign = "center",
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
