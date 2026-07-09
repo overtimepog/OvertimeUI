@@ -380,11 +380,15 @@ OvertimeUI.Presets = {
         Roundness = 1.5, PanelTransparency = 0.08, Animation = 0.9, TitleAlign = "center",
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
-    -- Clean light: white surfaces, top tab bar, flat and airy.
-    Paper = {
-        Theme = OvertimeUI.Themes.Paper,
-        Layout = "top", TitleAlign = "center", Roundness = 0.9,
-        Sheen = false, Animation = 0.7, Spacing = 3, BodyPadding = 14,
+    -- Inferno: aggressive crimson→orange gradient, top tab bar, heavy glow — a
+    -- bold "gamer cheat" look. (Replaced the old flat light Paper preset; the
+    -- Paper/Frost/Sand light *themes* are still available via Theme = "Paper".)
+    Inferno = {
+        Theme = OvertimeUI.Themes.Crimson,
+        AccentGradient = { rgb(255, 64, 72), rgb(255, 150, 40) },
+        Layout = "top", TitleAlign = "center",
+        Roundness = 0.6, Animation = 0.5,
+        GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
     -- Brutalist: hard corners, chunky mono, a solid accent header, single-column
     -- panel (no tab strip), zero glow.
