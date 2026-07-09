@@ -428,6 +428,15 @@ OvertimeUI.Presets = {
         Roundness = 0.4, StrokeThickness = 1, Animation = 0.5,
         TabHeight = 24, BodyPadding = 8, Spacing = 2, Sheen = false,
     },
+    -- Fluent: narrow icon-only left rail, rounded and translucent. Pass each tab
+    -- an Icon (CreateTab(name, "rbxassetid://...")); icon-less tabs show their
+    -- first letter instead.
+    Fluent = {
+        Theme = OvertimeUI.Themes.Midnight,
+        Layout = "rail",
+        Roundness = 1.4, PanelTransparency = 0.12, Animation = 0.8,
+        AccentGlow = true, GradientFill = true,
+    },
 }
 
 -- Shadow / glow image. A soft 9-slice drop shadow used behind the panel and
@@ -3169,7 +3178,9 @@ function Window:CreateTab(name, opts)
     end
 
     local topTabs  = (self.style.layout == "top" or self.style.layout == "bottom" or self.style.layout == "columns")
+    local railLayout = (self.style.layout == "rail")   -- narrow icon-only sidebar
     local tabHeight = math.max(20, math.floor(self.style.tabHeight))
+    local btnH = railLayout and 40 or tabHeight
 
     -- Tab strip button. The label is a separate child TextLabel (not button.Text)
     -- so an optional icon can sit to its left with a guaranteed gap — relying on
@@ -3193,7 +3204,7 @@ function Window:CreateTab(name, opts)
         Create("UIPadding", { PaddingRight = UDim.new(0, 14), Parent = button })
     else
         button = Create("TextButton", {
-            Size = UDim2.new(1, -8, 0, tabHeight),
+            Size = UDim2.new(1, -8, 0, btnH),
             BackgroundColor3 = theme.bgAlt,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -3223,12 +3234,27 @@ function Window:CreateTab(name, opts)
     })
     tab._label = label
 
-    -- Optional tab icon, left of the label. Tint follows active state (SwitchTab).
+    -- Rail: no room for text. Hide the label when there's an icon; otherwise turn
+    -- it into a centered single-letter glyph so icon-less tabs still read.
+    if railLayout then
+        if iconId then
+            label.Visible = false
+        else
+            label.Text = (name and name ~= "") and name:sub(1, 1):upper() or "?"
+            label.Size = UDim2.fromScale(1, 1)
+            label.Position = UDim2.new(0, 0, 0, 0)
+            label.TextXAlignment = Enum.TextXAlignment.Center
+            label.TextSize = 16
+            label.Font = FONT_BOLD
+        end
+    end
+
+    -- Optional tab icon. Rail: centered and larger. Otherwise left of the label.
     if iconId then
         tab._icon = Create("ImageLabel", {
             Name = "Icon",
-            Size = UDim2.fromOffset(16, 16),
-            Position = UDim2.new(0, 8, 0.5, -8),
+            Size = railLayout and UDim2.fromOffset(22, 22) or UDim2.fromOffset(16, 16),
+            Position = railLayout and UDim2.new(0.5, -11, 0.5, -11) or UDim2.new(0, 8, 0.5, -8),
             BackgroundTransparency = 1,
             Image = iconId,
             ImageColor3 = theme.textDim,
@@ -3254,7 +3280,7 @@ function Window:CreateTab(name, opts)
         tab._indicatorActive = UDim2.new(1, -10, 0, 2)
         tab._indicatorIdle   = UDim2.new(0, 0, 0, 2)
     else
-        local indH = math.clamp(math.floor(tabHeight * 0.53), 8, tabHeight)
+        local indH = math.clamp(math.floor(btnH * 0.53), 8, btnH)
         indicator = Create("Frame", {
             Size = UDim2.new(0, 3, 0, 0),
             Position = UDim2.new(0, 0, 0.5, 0),
@@ -3736,7 +3762,7 @@ function OvertimeUI:CreateWindow(cfg)
         self.style.spacing            = num(cfg.Spacing,         st.spacing)           or self.style.spacing
 
         local layout = pick(cfg.Layout, st.layout)
-        if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" or layout == "columns" then self.style.layout = layout end
+        if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" or layout == "columns" or layout == "rail" then self.style.layout = layout end
         local talign = pick(cfg.TitleAlign, st.titleAlign)
         if talign == "center" or talign == "left" then self.style.titleAlign = talign end
 
@@ -4125,10 +4151,12 @@ function OvertimeUI:CreateWindow(cfg)
             Parent = tabStrip,
         })
     else
-        -- Vertical sidebar of tabs on the left.
+        -- Vertical sidebar of tabs on the left. "rail" = a narrow icon-only rail.
+        local railLayout = (S.layout == "rail")
+        local sideW = railLayout and 52 or tabW
         tabStrip = Create("Frame", {
             Name = "TabStrip",
-            Size = UDim2.new(0, tabW, 1, 0),
+            Size = UDim2.new(0, sideW, 1, 0),
             BackgroundColor3 = self.theme.bgAlt,
             BorderSizePixel = 0,
             Parent = content,
@@ -4136,7 +4164,7 @@ function OvertimeUI:CreateWindow(cfg)
         corner(tabStrip, 8)
         Create("UIListLayout", {
             SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 4),
+            Padding = UDim.new(0, railLayout and 6 or 4),
             HorizontalAlignment = Enum.HorizontalAlignment.Center,
             Parent = tabStrip,
         })
@@ -4148,8 +4176,8 @@ function OvertimeUI:CreateWindow(cfg)
 
         tabBody = Create("Frame", {
             Name = "TabBody",
-            Size = UDim2.new(1, -(tabW + GAP), 1, 0),
-            Position = UDim2.new(0, tabW + GAP, 0, 0),
+            Size = UDim2.new(1, -(sideW + GAP), 1, 0),
+            Position = UDim2.new(0, sideW + GAP, 0, 0),
             BackgroundColor3 = self.theme.bgAlt,
             BorderSizePixel = 0,
             Parent = content,
