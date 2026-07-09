@@ -371,10 +371,11 @@ OvertimeUI.Presets = {
         GradientStroke = true, AccentGlow = true, GradientFill = true,
         TabWidth = 108, TabHeight = 26, Spacing = 1,
     },
-    -- Synthwave: purple→cyan gradient sweep, roomy and glassy.
+    -- Synthwave: purple→cyan gradient sweep, roomy and glassy, top tab bar.
     Synthwave = {
         Theme = OvertimeUI.Themes.Vapor,
         AccentGradient = { rgb(255, 80, 200), rgb(120, 120, 255), rgb(0, 220, 255) },
+        Layout = "top",
         Roundness = 1.5, PanelTransparency = 0.08, Animation = 0.9, TitleAlign = "center",
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
@@ -384,25 +385,30 @@ OvertimeUI.Presets = {
         Layout = "top", TitleAlign = "center", Roundness = 0.9,
         Sheen = false, Animation = 0.7, Spacing = 3, BodyPadding = 14,
     },
-    -- Brutalist: hard corners, chunky mono, a solid accent header, zero glow.
+    -- Brutalist: hard corners, chunky mono, a solid accent header, single-column
+    -- panel (no tab strip), zero glow.
     Brutalist = {
         Theme = OvertimeUI.Themes.Mono,
         Font = Enum.Font.Code, FontBold = Enum.Font.Code, FontSemi = Enum.Font.Code,
+        Layout = "panel",
         Roundness = 0, StrokeThickness = 2.5, Animation = 0.4,
         Shadow = false, Sheen = false, Stripe = false,
         HeaderFill = true, TitleAlign = "center",
-        TabWidth = 100, TabHeight = 24, BodyPadding = 8, Spacing = 1,
+        BodyPadding = 8, Spacing = 1,
     },
-    -- Ghost: barely-there translucent panel, no decorations.
+    -- Ghost: barely-there translucent single-column panel, no decorations.
     Ghost = {
         Theme = OvertimeUI.Themes.Dark,
+        Layout = "panel",
         Roundness = 1.2, PanelTransparency = 0.4, Animation = 0.8,
         Shadow = false, Sheen = false, Stripe = false,
     },
-    -- Holographic: iridescent tri-colour accent on translucent midnight glass.
+    -- Holographic: iridescent tri-colour accent on translucent midnight glass,
+    -- with the tab bar along the bottom.
     Holographic = {
         Theme = OvertimeUI.Themes.Midnight,
         AccentGradient = { rgb(0, 230, 255), rgb(180, 120, 255), rgb(255, 120, 200) },
+        Layout = "bottom",
         Roundness = 1.7, PanelTransparency = 0.16, Animation = 0.85, TitleAlign = "center",
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
@@ -3145,7 +3151,7 @@ function Window:CreateTab(name, opts)
         return tab
     end
 
-    local topTabs  = (self.style.layout == "top")
+    local topTabs  = (self.style.layout == "top" or self.style.layout == "bottom")
     local tabHeight = math.max(20, math.floor(self.style.tabHeight))
 
     -- Tab strip button. The label is a separate child TextLabel (not button.Text)
@@ -3713,7 +3719,7 @@ function OvertimeUI:CreateWindow(cfg)
         self.style.spacing            = num(cfg.Spacing,         st.spacing)           or self.style.spacing
 
         local layout = pick(cfg.Layout, st.layout)
-        if layout == "top" or layout == "left" or layout == "panel" then self.style.layout = layout end
+        if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" then self.style.layout = layout end
         local talign = pick(cfg.TitleAlign, st.titleAlign)
         if talign == "center" or talign == "left" then self.style.titleAlign = talign end
 
@@ -3773,6 +3779,7 @@ function OvertimeUI:CreateWindow(cfg)
     local panelT      = math.clamp(S.panelTransparency or 0, 0, 1)
     local panelLayout = (S.layout == "panel")
     local topTabs     = (S.layout == "top")
+    local bottomTabs  = (S.layout == "bottom")
     local tabW     = math.max(48, math.floor(S.tabWidth))
     local topStripH = math.max(24, math.floor(S.tabHeight) + 8) -- top-layout strip height
     local GAP      = 8
@@ -4067,6 +4074,39 @@ function OvertimeUI:CreateWindow(cfg)
             Parent = content,
         })
         corner(tabBody, 8)
+    elseif bottomTabs then
+        self._topLayout = true
+        -- Horizontal tab bar pinned to the BOTTOM; body fills the space above it.
+        tabBody = Create("Frame", {
+            Name = "TabBody",
+            Size = UDim2.new(1, 0, 1, -(topStripH + GAP)),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabBody, 8)
+        tabStrip = Create("Frame", {
+            Name = "TabStrip",
+            Size = UDim2.new(1, 0, 0, topStripH),
+            Position = UDim2.new(0, 0, 1, -topStripH),
+            BackgroundColor3 = self.theme.bgAlt,
+            BorderSizePixel = 0,
+            Parent = content,
+        })
+        corner(tabStrip, 8)
+        Create("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 4),
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Parent = tabStrip,
+        })
+        Create("UIPadding", {
+            PaddingLeft = UDim.new(0, 6),
+            PaddingRight = UDim.new(0, 6),
+            Parent = tabStrip,
+        })
     else
         -- Vertical sidebar of tabs on the left.
         tabStrip = Create("Frame", {
