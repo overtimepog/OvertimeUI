@@ -561,6 +561,18 @@ local function stroke(parent, color, thickness)
     return Create("UIStroke", { Color = color, Thickness = thickness or STROKE, Parent = parent })
 end
 
+-- Is this icon string a Roblox image asset (so it renders in an ImageLabel), or
+-- a text glyph / emoji (so it renders in a TextLabel)? Lets any icon field take
+-- either "rbxassetid://123" / a bare id, OR an emoji like "🎣".
+local function isImageAsset(s)
+    if type(s) ~= "string" then return false end
+    return s:match("^rbxassetid://") ~= nil
+        or s:match("^rbxthumb://") ~= nil
+        or s:match("^rbxasset://") ~= nil
+        or s:match("^https?://") ~= nil
+        or s:match("^%d+$") ~= nil
+end
+
 -- Fire-and-forget tween. Returns the Tween so callers can hook .Completed.
 -- Duration is scaled by the window's `animation` token (ANIM upvalue) so one
 -- style field speeds up or slows down every transition. At ANIM == 0 the tween
@@ -3254,17 +3266,34 @@ function Window:CreateTab(name, opts)
     end
 
     -- Optional tab icon. Rail: centered and larger. Otherwise left of the label.
+    -- An image asset renders in an ImageLabel; an emoji/text glyph in a TextLabel.
     if iconId then
-        tab._icon = Create("ImageLabel", {
-            Name = "Icon",
-            Size = railLayout and UDim2.fromOffset(22, 22) or UDim2.fromOffset(16, 16),
-            Position = railLayout and UDim2.new(0.5, -11, 0.5, -11) or UDim2.new(0, 8, 0.5, -8),
-            BackgroundTransparency = 1,
-            Image = iconId,
-            ImageColor3 = theme.textDim,
-            ZIndex = 2,
-            Parent = button,
-        })
+        if isImageAsset(iconId) then
+            tab._icon = Create("ImageLabel", {
+                Name = "Icon",
+                Size = railLayout and UDim2.fromOffset(22, 22) or UDim2.fromOffset(16, 16),
+                Position = railLayout and UDim2.new(0.5, -11, 0.5, -11) or UDim2.new(0, 8, 0.5, -8),
+                BackgroundTransparency = 1,
+                Image = iconId,
+                ImageColor3 = theme.textDim,
+                ZIndex = 2,
+                Parent = button,
+            })
+        else
+            tab._iconIsText = true
+            tab._icon = Create("TextLabel", {
+                Name = "Icon",
+                Size = railLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(18, 18),
+                Position = railLayout and UDim2.new(0.5, -12, 0.5, -12) or UDim2.new(0, 7, 0.5, -9),
+                BackgroundTransparency = 1,
+                Text = iconId,
+                TextColor3 = theme.textDim,
+                Font = FONT,
+                TextSize = railLayout and 20 or 15,
+                ZIndex = 2,
+                Parent = button,
+            })
+        end
     end
 
     -- Accent indicator. Left layout: a vertical bar on the row's left edge that
@@ -3385,7 +3414,12 @@ function Window:SwitchTab(tab)
                 T_NORMAL)
         end
         if t._icon then
-            tween(t._icon, { ImageColor3 = active and theme.accent or theme.textDim }, T_NORMAL)
+            local col = active and theme.accent or theme.textDim
+            if t._iconIsText then
+                tween(t._icon, { TextColor3 = col }, T_NORMAL)
+            else
+                tween(t._icon, { ImageColor3 = col }, T_NORMAL)
+            end
         end
     end
     self.activeTab = tab
