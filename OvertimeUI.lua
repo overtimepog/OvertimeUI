@@ -916,6 +916,7 @@ function Section:CreateToggle(cfg)
         Font = FONT,
         TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,  -- clip overlong names instead of bleeding past the column
         Parent = row,
     })
 
@@ -1075,6 +1076,7 @@ function Section:CreateSlider(cfg)
         Font = FONT,
         TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,  -- clip instead of bleeding past the value on a narrow column
         Parent = row,
     })
 
@@ -1879,15 +1881,20 @@ function Section:CreateLabel(cfg)
     local theme = self.tab.window.theme
     local color = cfg.Color or theme.textDim
 
+    -- AutomaticSize.Y treats the offset height as a MINIMUM, so short labels stay
+    -- one line at 16px (unchanged spacing) while long text wraps and grows the row
+    -- instead of clipping. TextWrapped must be on for the wrap to happen.
     local lbl = Create("TextLabel", {
         Size = UDim2.new(1, -4, 0, 16),
+        AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1,
         Text = cfg.Text or "",
         TextColor3 = color,
         Font = FONT,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
-        TextWrapped = false,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true,
         LayoutOrder = self:_next(),
         Parent = self.container,
     })
@@ -1977,15 +1984,33 @@ function Section:CreateInput(cfg)
         Name = cfg.Name or "Input",
     }
 
+    -- Stacked mode: name on its own line(s) above a full-width box. Best when the
+    -- column is narrow and the name is long — the name WRAPS instead of truncating
+    -- and the row auto-sizes to fit it (via a vertical list layout). Opt-in via
+    -- cfg.Stacked so existing compact side-by-side inputs are unchanged.
+    local stacked = cfg.Stacked == true
+
     local row = Create("Frame", {
-        Size = UDim2.new(1, -4, 0, 26),
+        Size = UDim2.new(1, -4, 0, stacked and 0 or 26),
+        AutomaticSize = stacked and Enum.AutomaticSize.Y or nil,
         BackgroundTransparency = 1,
         LayoutOrder = self:_next(),
         Parent = self.container,
     })
+    if stacked then
+        Create("UIListLayout", {
+            Padding = UDim.new(0, 3),
+            FillDirection = Enum.FillDirection.Vertical,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = row,
+        })
+    end
 
+    -- Side-by-side: name gets the larger share (0.58) since control names are
+    -- usually longer than their values. Stacked: name spans the full width and wraps.
     local nameLabel = Create("TextLabel", {
-        Size = UDim2.new(0.45, -4, 1, 0),
+        Size = stacked and UDim2.new(1, -4, 0, 16) or UDim2.new(0.58, -4, 1, 0),
+        AutomaticSize = stacked and Enum.AutomaticSize.Y or nil,
         Position = UDim2.new(0, 0, 0, 0),
         BackgroundTransparency = 1,
         Text = cfg.Name or "Input",
@@ -1993,13 +2018,17 @@ function Section:CreateInput(cfg)
         Font = FONT_SEMI,
         TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = stacked or nil,
+        TextTruncate = (not stacked) and Enum.TextTruncate.AtEnd or nil,
+        LayoutOrder = 1,
         Parent = row,
     })
 
     local box = Create("TextBox", {
-        Size = UDim2.new(0.55, -2, 0, 22),
-        Position = UDim2.new(0.45, 2, 0.5, -11),
+        Size = stacked and UDim2.new(1, -4, 0, 22) or UDim2.new(0.42, -2, 0, 22),
+        Position = stacked and UDim2.new(0, 0, 0, 0) or UDim2.new(0.58, 2, 0.5, -11),
+        LayoutOrder = 2,
         BackgroundColor3 = theme.surface,
         BorderSizePixel = 0,
         Text = currentText,
