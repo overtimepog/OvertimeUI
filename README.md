@@ -117,6 +117,8 @@ look distinct without forking the library:
 | `sheen` | boolean | `true` | Top-lit gradient on the panel |
 | `stripe` | boolean | `true` | Accent stripe in the title bar |
 | **`layout`** | string | `"left"` | **`"left"` sidebar tabs or `"top"` horizontal tab bar — the biggest single change in feel** |
+| **`toggleStyle`** | string | `"switch"` | **`"switch"` pill \| `"checkbox"` box+check \| `"led"` glowing dot — changes the shape of every toggle, the strongest control-level identity lever** |
+| **`headerStyle`** | string | `"tick"` | **section header look: `"tick"` accent bar \| `"underline"` accent rule \| `"bracket"` `[ TITLE ]` \| `"bar"` tinted bar \| `"plain"` dim label** |
 | `titleHeight` | number | `36` | Title-bar height in px |
 | `titleAlign` | string | `"left"` | `"left"` or `"center"` title text |
 | `titleIcon` | string | — | `rbxassetid://…` logo shown by the title (replaces the accent stripe) |
@@ -229,6 +231,10 @@ Shipped presets:
 | `Compact` | tight cheat-menu palette — pair with two-column groupboxes |
 | `Velvet` | warm, roomy, languid |
 | `Glass` | heavy translucent panel, big glow, gradients everywhere |
+| `Circuit` | near-black neon LED toggles + `[bracket]` headers, mono, icon rail — hardware-console feel |
+| `Editorial` | airy checkbox toggles + accent-underline headers, roomy — a clean "settings app" look |
+
+The `toggleStyle` + `headerStyle` tokens are the newest identity levers: two menus that differ only in these (e.g. `led`+`bracket` vs `checkbox`+`underline`) read as different libraries, not recolors. `Terminal`, `Compact`, `Brutalist`, and `Cheat` now set them too (Linoria-style checkboxes on `Cheat`/`Compact`, LEDs on `Terminal`).
 
 ### `Window:CreateTab(name [, opts])`
 

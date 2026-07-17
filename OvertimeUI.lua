@@ -116,6 +116,8 @@ local function defaultStyle()
         backgroundImageTransparency = 0.85,    -- how subtle that texture is
         -- layout / structure -------------------------------------------------
         layout      = "left",                  -- "left" sidebar tabs | "top" tab bar
+        toggleStyle = "switch",                -- "switch" pill | "checkbox" box | "led" dot — the single biggest per-menu identity lever alongside headerStyle
+        headerStyle = "tick",                  -- section header: "tick" | "underline" | "bracket" | "bar" | "plain"
         titleHeight = 36,                      -- title-bar height in px
         titleAlign  = "left",                  -- "left" | "center" title text
         titleIcon   = nil,                     -- optional rbxassetid:// logo by the title
@@ -335,12 +337,14 @@ OvertimeUI.Presets = {
         GradientStroke = true, AccentGlow = true, GradientFill = true,
     },
     -- Dense, sharp, monospaced terminal: hard corners, chunky frame, no glow.
+    -- LED toggles + bracketed headers complete the hacker-console read.
     Terminal = {
         Theme = OvertimeUI.Themes.Forest,
         Font = Enum.Font.Code, FontBold = Enum.Font.Code, FontSemi = Enum.Font.Code,
         Roundness = 0, StrokeThickness = 2,
         TabWidth = 96, TabHeight = 24, BodyPadding = 8, Spacing = 1,
         Sheen = false, Shadow = false,
+        ToggleStyle = "led", HeaderStyle = "bracket",
     },
     -- Compact cheat-menu: two-column groupbox body (Linoria-style) via CreateSection.
     Compact = {
@@ -349,6 +353,7 @@ OvertimeUI.Presets = {
         Layout = "columns",
         Roundness = 0.5, TabHeight = 26, BodyPadding = 8, Spacing = 1,
         GradientStroke = true,
+        ToggleStyle = "checkbox", HeaderStyle = "underline",
     },
     -- Warm, roomy, languid — soft and unhurried.
     Velvet = {
@@ -400,6 +405,7 @@ OvertimeUI.Presets = {
         Shadow = false, Sheen = false, Stripe = false,
         HeaderFill = true, TitleAlign = "center",
         BodyPadding = 8, Spacing = 1,
+        ToggleStyle = "checkbox", HeaderStyle = "bar",
     },
     -- Ghost: barely-there translucent single-column panel, no decorations.
     Ghost = {
@@ -431,6 +437,26 @@ OvertimeUI.Presets = {
         Layout = "columns",
         Roundness = 0.4, StrokeThickness = 1, Animation = 0.5,
         TabHeight = 24, BodyPadding = 8, Spacing = 2, Sheen = false,
+        ToggleStyle = "checkbox", HeaderStyle = "plain",   -- true Linoria checkbox read
+    },
+    -- Circuit: near-black neon LEDs + bracket headers, mono, tight rail — a live
+    -- hardware-console feel distinct from every other preset.
+    Circuit = {
+        Theme = OvertimeUI.Themes.Neon,
+        Font = Enum.Font.Code, FontBold = Enum.Font.Code, FontSemi = Enum.Font.Code,
+        Layout = "rail", Roundness = 0.4, Animation = 0.5,
+        AccentGlow = true, GradientStroke = true,
+        BodyPadding = 8, Spacing = 2,
+        ToggleStyle = "led", HeaderStyle = "bracket",
+    },
+    -- Editorial: airy checkbox + accent-underline headers, roomy and rounded —
+    -- a clean "settings app" look rather than a cheat menu.
+    Editorial = {
+        Theme = OvertimeUI.Themes.Ocean,
+        Roundness = 1.5, TitleHeight = 44, TabWidth = 150,
+        BodyPadding = 16, Spacing = 5, Animation = 1.1,
+        GradientFill = true,
+        ToggleStyle = "checkbox", HeaderStyle = "underline",
     },
     -- Fluent: narrow icon-only left rail, rounded and translucent. Pass each tab
     -- an Icon (CreateTab(name, "rbxassetid://...")); icon-less tabs show their
@@ -859,53 +885,107 @@ function Section:CreateToggle(cfg)
         Parent = self.container,
     })
 
-    -- Flat pill switch (Fluent-style): track tints surface→accent, a plain
-    -- dot slides across. Off knob is a muted dot; on knob is white, so the
-    -- state reads at a glance even before you clock the track colour. When
-    -- accentGlow is on, an accent halo fades in behind the track while active.
-    local TRACK_W, TRACK_H, KNOB = 36, 18, 14
+    -- The indicator always lives in a fixed 46px lead zone, so the label
+    -- geometry (and AddKeybind's resize math) is identical for every
+    -- toggleStyle. Only the indicator SHAPE changes — which is exactly what
+    -- makes two menus read as different libraries rather than recolors.
+    local tstyle = (window.style and window.style.toggleStyle) or "switch"
+    local paint  -- function(v, animated): repaint the indicator to state v
 
-    -- Glow sits behind the track (ZIndex 0, sibling in the row) so it never
-    -- covers the knob. Only built when accentGlow is enabled.
-    local trackGlow
-    if ACCENT_GLOW then
-        trackGlow = Create("ImageLabel", {
-            Name = "Glow",
-            BackgroundTransparency = 1,
-            Image = SHADOW_ASSET,
-            ImageColor3 = theme.accentGlow or theme.accent,
-            ImageTransparency = state and 0.45 or 1,
-            ScaleType = Enum.ScaleType.Slice,
-            SliceCenter = SHADOW_SLICE,
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(0, 2 + TRACK_W / 2, 0.5, 0),
-            Size = UDim2.fromOffset(TRACK_W + 22, TRACK_H + 22),
-            ZIndex = 0,
-            Parent = row,
+    if tstyle == "checkbox" then
+        local BOX = 18
+        local box = Create("Frame", {
+            Size = UDim2.fromOffset(BOX, BOX),
+            Position = UDim2.new(0, 6, 0.5, -BOX / 2),
+            BackgroundColor3 = state and theme.accent or theme.surface,
+            BorderSizePixel = 0, ZIndex = 1, Parent = row,
         })
+        corner(box, math.max(2, math.floor(4 * ROUNDNESS)))
+        local bStroke = stroke(box, state and theme.accent or theme.border, 1)
+        local check = Create("TextLabel", {
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Text = "✓", Font = FONT_BOLD, TextSize = 13,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextTransparency = state and 0 or 1, Parent = box,
+        })
+        paint = function(v, anim)
+            local d = anim and T_NORMAL or 0
+            tween(box, { BackgroundColor3 = v and theme.accent or theme.surface }, d)
+            tween(bStroke, { Color = v and theme.accent or theme.border }, d)
+            tween(check, { TextTransparency = v and 0 or 1 }, d)
+        end
+
+    elseif tstyle == "led" then
+        local DOT = 12
+        local glow
+        if ACCENT_GLOW then
+            glow = Create("ImageLabel", {
+                Name = "Glow", BackgroundTransparency = 1, Image = SHADOW_ASSET,
+                ImageColor3 = theme.accentGlow or theme.accent,
+                ImageTransparency = state and 0.2 or 1,
+                ScaleType = Enum.ScaleType.Slice, SliceCenter = SHADOW_SLICE,
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(0, 12, 0.5, 0),
+                Size = UDim2.fromOffset(DOT + 20, DOT + 20), ZIndex = 0, Parent = row,
+            })
+        end
+        local dot = Create("Frame", {
+            Size = UDim2.fromOffset(DOT, DOT),
+            Position = UDim2.new(0, 6, 0.5, -DOT / 2),
+            BackgroundColor3 = state and theme.accent or theme.surface,
+            BorderSizePixel = 0, ZIndex = 1, Parent = row,
+        })
+        corner(dot, DOT / 2)
+        local dStroke = stroke(dot, state and theme.accent or theme.border, 1)
+        paint = function(v, anim)
+            local d = anim and T_NORMAL or 0
+            tween(dot, { BackgroundColor3 = v and theme.accent or theme.surface }, d)
+            tween(dStroke, { Color = v and theme.accent or theme.border }, d)
+            if glow then tween(glow, { ImageTransparency = v and 0.2 or 1 }, d) end
+        end
+
+    else -- "switch": flat pill (Fluent-style), a dot slides surface→accent
+        local TRACK_W, TRACK_H, KNOB = 36, 18, 14
+        local trackGlow
+        if ACCENT_GLOW then
+            trackGlow = Create("ImageLabel", {
+                Name = "Glow", BackgroundTransparency = 1, Image = SHADOW_ASSET,
+                ImageColor3 = theme.accentGlow or theme.accent,
+                ImageTransparency = state and 0.45 or 1,
+                ScaleType = Enum.ScaleType.Slice, SliceCenter = SHADOW_SLICE,
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(0, 2 + TRACK_W / 2, 0.5, 0),
+                Size = UDim2.fromOffset(TRACK_W + 22, TRACK_H + 22), ZIndex = 0, Parent = row,
+            })
+        end
+        local track = Create("Frame", {
+            Size = UDim2.fromOffset(TRACK_W, TRACK_H),
+            Position = UDim2.new(0, 2, 0.5, -TRACK_H / 2),
+            BackgroundColor3 = state and theme.accent or theme.surface,
+            BorderSizePixel = 0, ZIndex = 1, Parent = row,
+        })
+        corner(track, TRACK_H / 2)
+        local trackStroke = stroke(track, state and theme.accent or theme.border, 1)
+        local knobOffOff = 2
+        local knobOnOff  = TRACK_W - KNOB - 2
+        local knob = Create("Frame", {
+            Size = UDim2.fromOffset(KNOB, KNOB),
+            Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
+            BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.textDim,
+            BorderSizePixel = 0, Parent = track,
+        })
+        corner(knob, KNOB / 2)
+        paint = function(v, anim)
+            local d = anim and T_NORMAL or 0
+            tween(track, { BackgroundColor3 = v and theme.accent or theme.surface }, d)
+            tween(trackStroke, { Color = v and theme.accent or theme.border }, d)
+            if trackGlow then tween(trackGlow, { ImageTransparency = v and 0.45 or 1 }, d) end
+            tween(knob, {
+                Position = UDim2.new(0, v and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
+                BackgroundColor3 = v and Color3.new(1, 1, 1) or theme.textDim,
+            }, d)
+        end
     end
-
-    local track = Create("Frame", {
-        Size = UDim2.fromOffset(TRACK_W, TRACK_H),
-        Position = UDim2.new(0, 2, 0.5, -TRACK_H / 2),
-        BackgroundColor3 = state and theme.accent or theme.surface,
-        BorderSizePixel = 0,
-        ZIndex = 1,
-        Parent = row,
-    })
-    corner(track, TRACK_H / 2)
-    local trackStroke = stroke(track, state and theme.accent or theme.border, 1)
-
-    local knobOffOff = 2                          -- knob x when off
-    local knobOnOff  = TRACK_W - KNOB - 2         -- knob x when on
-    local knob = Create("Frame", {
-        Size = UDim2.fromOffset(KNOB, KNOB),
-        Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
-        BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.textDim,
-        BorderSizePixel = 0,
-        Parent = track,
-    })
-    corner(knob, KNOB / 2)
 
     local label = Create("TextLabel", {
         Size = UDim2.new(1, -46, 1, 0),
@@ -924,14 +1004,8 @@ function Section:CreateToggle(cfg)
         v = not not v
         if v == state then return end
         state = v
-        tween(track, { BackgroundColor3 = state and theme.accent or theme.surface }, T_NORMAL)
-        tween(trackStroke, { Color = state and theme.accent or theme.border }, T_NORMAL)
-        if trackGlow then tween(trackGlow, { ImageTransparency = state and 0.45 or 1 }, T_NORMAL) end
+        paint(state, true)
         tween(label, { TextColor3 = state and theme.text or theme.textDim }, T_NORMAL)
-        tween(knob, {
-            Position = UDim2.new(0, state and knobOnOff or knobOffOff, 0.5, -KNOB / 2),
-            BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.textDim,
-        }, T_NORMAL)
         if fireCallback and cfg.Callback then
             task.spawn(cfg.Callback, state)
         end
@@ -2979,27 +3053,53 @@ function Tab:CreateSection(name)
     -- so callers can create headerless sections (saves 18px of canvas height).
     local header
     if name and name ~= "" then
+        local hstyle = (window.style and window.style.headerStyle) or "tick"
         local headerRow = Create("Frame", {
             Size = UDim2.new(1, -10, 0, 16),
             BackgroundTransparency = 1,
             LayoutOrder = sectionOrder * 1000 + 1,
             Parent = self.page,
         })
-        local tick = Create("Frame", {
-            Size = UDim2.fromOffset(3, 11),
-            Position = UDim2.new(0, 2, 0.5, -5),
-            BackgroundColor3 = theme.accent,
-            BorderSizePixel = 0,
-            Parent = headerRow,
-        })
-        corner(tick, 2)
-        applyAccentGradient(tick, window.accentGradient, 90)
+        local titleX, titleText, titleColor = 12, string.upper(name), theme.accent
+
+        if hstyle == "bar" then
+            local bar = Create("Frame", {
+                Size = UDim2.fromScale(1, 1),
+                BackgroundColor3 = theme.accent, BackgroundTransparency = 0.82,
+                BorderSizePixel = 0, Parent = headerRow,
+            })
+            corner(bar, math.max(2, math.floor(3 * ROUNDNESS)))
+            applyAccentGradient(bar, window.accentGradient, 0)
+            titleX = 8
+        elseif hstyle == "underline" then
+            local ul = Create("Frame", {
+                Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
+                BackgroundColor3 = theme.accent, BorderSizePixel = 0, Parent = headerRow,
+            })
+            applyAccentGradient(ul, window.accentGradient, 0)
+            titleX = 2
+        elseif hstyle == "bracket" then
+            titleText = "[ " .. string.upper(name) .. " ]"
+            titleX = 2
+        elseif hstyle == "plain" then
+            titleColor = theme.textDim
+            titleX = 2
+        else -- "tick" (default): accent bar + uppercase accent title
+            local tick = Create("Frame", {
+                Size = UDim2.fromOffset(3, 11), Position = UDim2.new(0, 2, 0.5, -5),
+                BackgroundColor3 = theme.accent, BorderSizePixel = 0, Parent = headerRow,
+            })
+            corner(tick, 2)
+            applyAccentGradient(tick, window.accentGradient, 90)
+            titleX = 12
+        end
+
         header = Create("TextLabel", {
-            Size = UDim2.new(1, -12, 1, 0),
-            Position = UDim2.new(0, 12, 0, 0),
+            Size = UDim2.new(1, -titleX - 2, 1, 0),
+            Position = UDim2.new(0, titleX, 0, 0),
             BackgroundTransparency = 1,
-            Text = string.upper(name),
-            TextColor3 = theme.accent,
+            Text = titleText,
+            TextColor3 = titleColor,
             Font = FONT_BOLD,
             TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -3849,6 +3949,11 @@ function OvertimeUI:CreateWindow(cfg)
 
         local layout = pick(cfg.Layout, st.layout)
         if layout == "top" or layout == "left" or layout == "panel" or layout == "bottom" or layout == "columns" or layout == "rail" then self.style.layout = layout end
+        -- control-shape tokens: the levers that make two menus look like different libraries
+        local tgl = pick(cfg.ToggleStyle, st.toggleStyle)
+        if tgl == "switch" or tgl == "checkbox" or tgl == "led" then self.style.toggleStyle = tgl end
+        local hdr = pick(cfg.HeaderStyle, st.headerStyle)
+        if hdr == "tick" or hdr == "underline" or hdr == "bracket" or hdr == "bar" or hdr == "plain" then self.style.headerStyle = hdr end
         local talign = pick(cfg.TitleAlign, st.titleAlign)
         if talign == "center" or talign == "left" then self.style.titleAlign = talign end
 
